@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import Importa from "@/components/Importa";
 import { crea, elenco } from "@/lib/progetti";
 
 export const metadata = { title: "Progetti · Abita" };
@@ -33,6 +34,7 @@ export default async function Studio() {
             <label className="piccolo tenue" style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" name="esempio" defaultChecked style={{ minHeight: 0 }} /> Parti dalla casa di esempio</label>
             <button className="btn primario">Crea progetto</button>
           </form>
+          <Importa />
         </section>
         {lista.map(p => (
           <section className="progetto" key={p.id}>
