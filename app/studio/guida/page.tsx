@@ -34,7 +34,8 @@ function md(t: string) {
 
 export default async function Guida() {
   const h = await headers(), origin = process.env.ABITA_URL ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-  const cmd = `claude mcp add --transport http --scope user abita ${origin}/api/mcp --header "Authorization: Bearer LA_TUA_CHIAVE"`;
+  // npx funziona anche se Claude Code lo usi solo dall'app desktop e il comando claude non è installato
+  const cmd = `npx -y @anthropic-ai/claude-code mcp add --transport http --scope user abita ${origin}/api/mcp --header "Authorization: Bearer LA_TUA_CHIAVE"`;
   return (
     <main className="pagina">
       <header className="testata">
@@ -45,7 +46,7 @@ export default async function Guida() {
           <h2>Collega Claude Code</h2>
           <p>Nel terminale del tuo computer esegui questo comando. Al posto di <code>LA_TUA_CHIAVE</code> metti il valore di <code>ABITA_TOKEN</code> che hai impostato su Vercel.</p>
           <div className="comando"><pre>{cmd}</pre><Copia testo={cmd} /></div>
-          <p>Poi apri Claude Code (anche in una cartella qualsiasi) e scrivi <code>/mcp</code>: deve comparire <strong>abita</strong> collegato. Da lì puoi chiedere cose come:</p>
+          <p>Poi apri una sessione nuova di Claude Code (anche dall&apos;app desktop, in una cartella qualsiasi) e chiedi «elenca i progetti di Abita»: se risponde con i tuoi progetti, è collegato. Da lì puoi chiedere cose come:</p>
           <ul>
             <li>«Su Abita crea il progetto Casa Bianchi: ti incollo le misure che ho preso»</li>
             <li>«Guarda la foto della piantina in Casa Bianchi e ridisegnala»</li>
