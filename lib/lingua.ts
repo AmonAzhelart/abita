@@ -441,6 +441,17 @@ export function imposta(testo: string, riga: number, chiave: string, valore: str
   return r.join("\n");
 }
 
+/** Accende o spegne una parola singola sulla riga (chiudi, scorrevole, copertura, calpestabile, piano). */
+export function segna(testo: string, riga: number, parola: string, si: boolean) {
+  const r = dividi(testo), toks = tokenizza(r[riga]), simili = parola === "chiudi" ? ["chiudi", "chiuso"] : [parola];
+  let s = r[riga];
+  const c = toks.filter((t, k) => k > 0 && !t.q && simili.includes(t.t.toLowerCase()));
+  if (!si) for (const t of c.reverse()) s = s.slice(0, t.s).replace(/[ \t]+$/, "") + s.slice(t.e);
+  else if (!c.length) { const fine = toks.length ? toks[toks.length - 1].e : s.length; s = s.slice(0, fine) + " " + parola + s.slice(fine); }
+  r[riga] = s;
+  return r.join("\n");
+}
+
 /** Aggiunge una riga in fondo al blocco di un piano; restituisce il testo e il numero della riga nuova. */
 export function aggiungi(testo: string, M: Modello, piano: string, nuova: string) {
   const r = dividi(testo), pi = M.piani.findIndex(p => p.id === piano);

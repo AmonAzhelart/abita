@@ -1,6 +1,6 @@
 // Pianta in SVG (unità: cm). Stessa funzione per l'editor, la pagina del cliente e l'immagine che vede Claude.
 // Ogni elemento cliccabile porta data-r = numero di riga del testo.
-import { hex } from "./arredi.ts";
+import { CATALOGO, hex } from "./arredi.ts";
 import { dentro, lati, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Muro, type Pt } from "./lingua.ts";
 import type { Esito } from "./passaggi.ts";
 
@@ -196,6 +196,14 @@ export function disegnaPianta(M: Modello, o: OpzPianta) {
   if (o.testo !== false) for (const t of et)
     sv.push(`<text x="${r1(t.x)}" y="${r1(t.y + (t.dy ?? 0) * t.dim)}" font-size="${t.dim}" text-anchor="middle" dominant-baseline="central" style="fill:${t.colore};font-weight:${t.peso};paint-order:stroke;stroke:${C.fondo};stroke-width:${t.dim / 5}px;stroke-linejoin:round"${t.ruota ? ` transform="rotate(${r1(t.ruota)} ${r1(t.x)} ${r1(t.y)})"` : ""}>${esc(t.testo)}</text>`);
   return { svg: sv.join(""), etichette: et };
+}
+
+/** Il simbolo di un arredo del catalogo con le misure di serie, per le anteprime: markup e viewBox. */
+export function anteprima(cosa: string, colori: Colori = CSS) {
+  const v = CATALOGO[cosa];
+  const a: Arredo = { tipo: "arredo", riga: 0, piano: "", cosa, nome: "", a: { x: 0, y: 0 }, L: v.L, P: v.P, H: v.H || 300, ruota: 0, colore: v.colore, quota: 0 };
+  const m = Math.max(v.L, v.P) * 0.08;
+  return { svg: simbolo(a, colori, { modelli: {} } as unknown as Modello), box: `${-v.L / 2 - m} ${-v.P / 2 - m} ${v.L + 2 * m} ${v.P + 2 * m}` };
 }
 
 /** Il contorno da evidenziare per un elemento (selezione, modifiche di Claude). */

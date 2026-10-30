@@ -3,12 +3,13 @@
 // Ogni modifica (scritta o disegnata) cambia il testo; il testo si salva da solo e Claude lo vede subito.
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CATALOGO, COLORI } from "@/lib/arredi";
-import { aggiungi, cambiaRiga, distSeg, etichetta, imposta, impostaPunti, leggi, segmenti, sposta, togli, type Modello, type Pt } from "@/lib/lingua";
+import { aggiungi, distSeg, imposta, impostaPunti, leggi, segmenti, sposta, togli, type Modello, type Pt } from "@/lib/lingua";
 import { passaggi } from "@/lib/passaggi";
 import type { Appunto, Foto, Progetto } from "@/lib/progetti";
+import Catalogo from "./Catalogo";
 import Codice from "./Codice";
 import Pianta, { type Strumento } from "./Pianta";
+import Proprieta, { Profilo } from "./Proprieta";
 import Vista3D, { useMesh, type Volo } from "./Vista3D";
 
 type Rpc = { ok: true; doc: Progetto } | { ok: false; stato: number; errore: string };
@@ -54,7 +55,7 @@ const Ico = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" fill="none" strok
 const ATTREZZI: [Strumento, string, string][] = [["sposta", "Sposta", "V"], ["muro", "Muro", "M"], ["stanza", "Stanza", "S"], ["porta", "Porta", "P"], ["finestra", "Finestra", "F"], ["arredo", "Arredo", "A"], ["misura", "Misura", "Q"], ["appunto", "Appunto", "N"]];
 const AIUTO: Partial<Record<Strumento, string>> = {
   sposta: "Clic per scegliere, trascina per spostare. Canc elimina, R ruota",
-  muro: "Clic per ogni angolo, doppio clic o Invio per finire",
+  muro: "Clic per ogni angolo · scrivi una misura e Invio per un tratto esatto · doppio clic per finire",
   stanza: "Trascina da un angolo all'altro (misure interne)",
   porta: "Clic sopra un muro", finestra: "Clic sopra un muro", arredo: "Clic dove va il centro",
   misura: "Clic sul primo punto e sul secondo", calibra: "Clic su due punti della foto di cui sai la distanza vera",
@@ -91,6 +92,8 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const [volo, setVolo] = useState<Volo>({ tipo: "panoramica", n: 0 });
   const [storia, setStoria] = useState<{ rev: number; chi: string; quando: number; righe: number }[] | null>(null);
   const [catalogo, setCatalogo] = useState(false);
+  const [opzMuro, setOpzMuro] = useState({ spessore: 20, a: "", b: "" });   // a, b vuote = altezza del piano
+  const [inCorso, setInCorso] = useState(false);                             // un muro a metà: Esc e Backspace sono suoi
 
   const R = useRef({ testo, rev: iniziale.rev, sporco: false, inVolo: false, timer: 0 as unknown as ReturnType<typeof setTimeout>, visto: Math.max(0, ...iniziale.attivita.map(a => a.quando)), passato: [] as string[], futuro: [] as string[], ultimoPush: 0 });
 
@@ -166,12 +169,16 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const elSel = sel != null ? M.el.find(e => e.riga === sel) : undefined;
   const nuovaRiga = (riga: string) => { const r = aggiungi(R.current.testo, M, piano, riga); cambia(r.testo); setSel(r.riga); setVai({ riga: r.riga, n: Date.now() }); };
 
+  const hPiano = M.piani.find(x => x.id === piano)?.altezza ?? 270;
+  const hA = parseFloat(opzMuro.a) > 0 ? parseFloat(opzMuro.a) : hPiano, hB = parseFloat(opzMuro.b) > 0 ? parseFloat(opzMuro.b) : hA;
+
   function disegnato(c: Strumento, pts: Pt[]) {
     const [a, b] = pts;
     switch (c) {
       case "muro": {
         const chiuso = pts.length > 2 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1;
-        nuovaRiga(`muro ${scriviPunti(chiuso ? pts.slice(0, -1) : pts)}${chiuso ? " chiudi" : ""} spessore 20`);
+        nuovaRiga(`muro ${scriviPunti(chiuso ? pts.slice(0, -1) : pts)}${chiuso ? " chiudi" : ""} spessore ${opzMuro.spessore}`
+          + (hA !== hPiano || hB !== hA ? ` altezza ${hA}` : "") + (hB !== hA ? ` fino ${hB}` : ""));
         return;
       }
       case "stanza": {
@@ -219,8 +226,9 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !dentroCampo) { e.preventDefault(); if (e.shiftKey) rifai(); else annulla(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y" && !dentroCampo) { e.preventDefault(); rifai(); return; }
       if (dentroCampo || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (inCorso) return;                                   // la pianta sta disegnando: i tasti li gestisce lei
       if (e.key === "Escape") { setStrumento("sposta"); setSel(null); setBozza(null); setCatalogo(false); return; }
-      if ((e.key === "Delete" || e.key === "Backspace") && sel != null) { e.preventDefault(); cambia(togli(R.current.testo, sel)); setSel(null); return; }
+      if ((e.key === "Delete" || e.key === "Backspace") && sel != null && strumento === "sposta") { e.preventDefault(); cambia(togli(R.current.testo, sel)); setSel(null); return; }
       if (e.key.toLowerCase() === "r" && elSel?.tipo === "arredo") { cambia(imposta(R.current.testo, elSel.riga, "ruota", String((elSel.ruota + 90) % 360))); return; }
       const a = ATTREZZI.find(x => x[2].toLowerCase() === e.key.toLowerCase());
       if (a && vista === "pianta") { setStrumento(a[0]); setCatalogo(a[0] === "arredo"); }
@@ -264,6 +272,10 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
           <i />{claudeAttivo ? "Claude sta lavorando" : ultimoClaude ? `Claude, ${quanto(ultimoClaude)}` : "Collega Claude"}
         </Link>
         <span className="spazio" />
+        <div className="storia-btn nascondi-mobile" role="group" aria-label="Cronologia">
+          <button className="btn piccolo" onClick={annulla} disabled={!R.current.passato.length} title="Annulla (Ctrl+Z)" aria-label="Annulla">↶</button>
+          <button className="btn piccolo" onClick={rifai} disabled={!R.current.futuro.length} title="Rifai (Ctrl+Shift+Z)" aria-label="Rifai">↷</button>
+        </div>
         <span className="tenue piccolo nascondi-mobile" aria-live="polite">{stato === "salvo" ? "Salvo…" : stato === "errore" ? "Non salvato" : "Salvato"}</span>
         {M.errori.length > 0 && <button className="btn piccolo pericolo" onClick={() => { setSx("codice"); setAperto("sx"); setVai({ riga: M.errori[0].riga, n: Date.now() }); }}>{M.errori.length} {M.errori.length === 1 ? "errore" : "errori"}</button>}
         <a className="btn piccolo nascondi-mobile" href={p.pubblicato ? `/v/${p.share}` : undefined} target="_blank" rel="noreferrer" aria-disabled={!p.pubblicato}
@@ -332,6 +344,8 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
               appunti={appunti} notaSel={notaSel} foto={p.foto} fotoAttiva={fotoAttiva} centra={centra} adatta={adatta}
               onSel={scegli} onSposta={(r, x, y) => cambia(sposta(R.current.testo, r, x, y))}
               onVertici={(r, pts) => cambia(impostaPunti(R.current.testo, r, pts))} onDisegna={disegnato}
+              muro={{ spessore: opzMuro.spessore, a: hA, b: hB }} onBozza={setInCorso}
+              onRuota={(r, gr) => cambia(imposta(R.current.testo, r, "ruota", gr ? String(gr) : null))}
               onNota={nid => { setNotaSel(nid); setDx("appunti"); }} onFoto={cambiaFoto} />
           : <Vista3D modello={M} mesh={mesh} piano={piano} tetto={tetto} nomi volo={volo} onStanza={r => setVolo({ tipo: "stanza", riga: r, n: Date.now() })} />}
         <div className="galleggia alto">
@@ -360,10 +374,27 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
           {strumento === "appunto" && <div className="galleggia" style={{ bottom: 80, left: "50%", transform: "translateX(-50%)" }}>
             <div className="segmenti vetro">{(["punto", "linea", "zona"] as const).map(m => <button key={m} aria-pressed={modoAppunto === m} onClick={() => setModoAppunto(m)}>{m[0].toUpperCase() + m.slice(1)}</button>)}</div>
           </div>}
-          {catalogo && strumento === "arredo" && <div className="catalogo vetro" role="listbox" aria-label="Arredi">
-            {Object.keys(CATALOGO).map(k => <button key={k} className="btn piccolo" aria-pressed={cosa === k} onClick={() => { setCosa(k); setCatalogo(false); }}>{k.replace("_", " ")}</button>)}
+          {catalogo && strumento === "arredo" && <Catalogo scelto={cosa} onScegli={k => { setCosa(k); setCatalogo(false); }} />}
+          {strumento === "muro" && <div className="opzioni-muro vetro" role="group" aria-label="Opzioni del muro">
+            <div className="gruppo">
+              <span className="etichetta">Spessore</span>
+              <div className="segmenti">{[10, 20, 30, 40].map(v => <button key={v} type="button" aria-pressed={opzMuro.spessore === v} onClick={() => setOpzMuro(o => ({ ...o, spessore: v }))}>{v}</button>)}</div>
+              <input className="mini" inputMode="numeric" aria-label="Spessore su misura" value={[10, 20, 30, 40].includes(opzMuro.spessore) ? "" : opzMuro.spessore} placeholder="…"
+                onChange={e => { const v = parseFloat(e.target.value); if (v > 0) setOpzMuro(o => ({ ...o, spessore: v })); }} />
+            </div>
+            <div className="gruppo">
+              <span className="etichetta">Altezza</span>
+              <label className="mini-campo">A<input className="mini" inputMode="numeric" placeholder={String(hPiano)} value={opzMuro.a} aria-label="Altezza al punto A"
+                onChange={e => setOpzMuro(o => ({ ...o, a: e.target.value.replace(/[^\d.]/g, "") }))} /></label>
+              <span aria-hidden="true" className="tenue">→</span>
+              <label className="mini-campo">B<input className="mini" inputMode="numeric" placeholder={String(hA)} value={opzMuro.b} aria-label="Altezza al punto B"
+                onChange={e => setOpzMuro(o => ({ ...o, b: e.target.value.replace(/[^\d.]/g, "") }))} /></label>
+              {(opzMuro.a || opzMuro.b) && <button type="button" className="btn piccolo" onClick={() => setOpzMuro(o => ({ ...o, a: "", b: "" }))} title="Torna all'altezza del piano">Del piano</button>}
+            </div>
+            <Profilo a={hA} b={hB} scritte={false} />
+            <p className="aiuto-muro">Clic per ogni angolo · scrivi una misura e Invio per un tratto esatto · Backspace toglie l&apos;ultimo punto · doppio clic per finire</p>
           </div>}
-          {!bozza && !catalogo && AIUTO[strumento] && strumento !== "appunto" && <div className="suggerimento vetro">{strumento === "arredo" ? `${cosa.replace("_", " ")}: clic dove va il centro` : AIUTO[strumento]}</div>}
+          {!bozza && !catalogo && AIUTO[strumento] && strumento !== "appunto" && strumento !== "muro" && <div className="suggerimento vetro">{strumento === "arredo" ? `${cosa.replace("_", " ")}: clic dove va il centro` : AIUTO[strumento]}</div>}
           <nav className="attrezzi vetro" aria-label="Attrezzi">
             {ATTREZZI.map(([k, nome, tasto]) => (
               <button key={k} className={k === "appunto" ? "appunto" : undefined} aria-pressed={strumento === k} title={`${nome} (${tasto})`}
@@ -388,35 +419,10 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       </main>
 
       <aside className={"ed-pannello ed-dx" + (aperto === "dx" ? " aperto" : "")}>
-        {elSel && <div className="blocco" style={{ background: "var(--bg)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <b style={{ fontWeight: 600 }}>{etichetta(elSel)}</b><span className="tenue piccolo">riga {elSel.riga + 1}</span>
-            <span className="spazio" /><button className="btn piccolo" aria-label="Chiudi" onClick={() => setSel(null)}>✕</button>
-          </div>
-          <input className="riga-input" value={M.righe[elSel.riga] ?? ""} onChange={e => cambia(cambiaRiga(R.current.testo, elSel.riga, e.target.value), true)} aria-label="La riga di questo elemento" spellCheck={false} />
-          {elSel.tipo === "arredo" && <div className="campi">
-            {(["L", "P", "H"] as const).map((k, i) => <label key={k}>{["Larghezza", "Profondità", "Altezza"][i]}
-              <input type="number" value={Math.round(elSel[k])} onChange={e => { const m = [elSel.L, elSel.P, elSel.H]; m[i] = Math.max(1, +e.target.value || 1); cambia(imposta(R.current.testo, elSel.riga, "misure", m.map(Math.round).join("x")), true); }} /></label>)}
-          </div>}
-          {(elSel.tipo === "arredo" || elSel.tipo === "stanza" || elSel.tipo === "area" || elSel.tipo === "muro") && <div className="campi" style={{ gridTemplateColumns: elSel.tipo === "arredo" ? "1fr auto auto" : "1fr" }}>
-            <label>{elSel.tipo === "stanza" || elSel.tipo === "area" ? "Pavimento" : "Colore"}
-              <select value={elSel.colore} onChange={e => cambia(imposta(R.current.testo, elSel.riga, elSel.tipo === "stanza" || elSel.tipo === "area" ? "pavimento" : "colore", e.target.value))}>
-                {Object.keys(COLORI).map(c => <option key={c} value={c}>{c.replace("_", " ")}</option>)}
-              </select></label>
-            {elSel.tipo === "arredo" && <>
-              <button className="btn piccolo" style={{ alignSelf: "end" }} onClick={() => cambia(imposta(R.current.testo, elSel.riga, "ruota", String((elSel.ruota + 270) % 360)))}>↺ 90°</button>
-              <button className="btn piccolo" style={{ alignSelf: "end" }} onClick={() => cambia(imposta(R.current.testo, elSel.riga, "ruota", String((elSel.ruota + 90) % 360)))}>↻ 90°</button>
-            </>}
-          </div>}
-          {elSel.tipo === "stanza" && <label className="campi" style={{ gridTemplateColumns: "1fr" }}><span className="piccolo tenue">Nome</span>
-            <input value={elSel.nome} onChange={e => cambia(cambiaRiga(R.current.testo, elSel.riga, M.righe[elSel.riga].replace(/^(\s*\S+\s+)("[^"]*"|“[^”]*”|\S+)/, `$1"${e.target.value.replace(/"/g, "'")}"`)), true)} /></label>}
-          <div style={{ display: "flex", gap: 6 }}>
-            <button className="btn piccolo" onClick={() => nuovaRiga(sposta(M.righe[elSel.riga].trim(), 0, 30, 30))}>Duplica</button>
-            <button className="btn piccolo pericolo" onClick={() => { cambia(togli(R.current.testo, elSel.riga)); setSel(null); }}>Elimina</button>
-            <span className="spazio" />
-            <button className="btn piccolo" onClick={() => { setStrumento("appunto"); setModoAppunto("punto"); mostra("Clic sul punto della pianta dove va l'appunto"); }}>Appunto qui</button>
-          </div>
-        </div>}
+        {elSel && <Proprieta M={M} el={elSel} testo={() => R.current.testo} cambia={cambia} onChiudi={() => setSel(null)}
+          onElimina={() => { cambia(togli(R.current.testo, elSel.riga)); setSel(null); }}
+          onDuplica={() => nuovaRiga(sposta(M.righe[elSel.riga].trim(), 0, 30, 30))}
+          onAppunto={() => { setVista("pianta"); setStrumento("appunto"); setModoAppunto("punto"); mostra("Tocca il punto della pianta dove va l'appunto"); }} />}
         <div className="schede" role="tablist">
           <button role="tab" aria-selected={dx === "appunti"} onClick={() => setDx("appunti")}>Appunti ({appunti.filter(a => a.stato === "da fare").length})</button>
           <button role="tab" aria-selected={dx === "claude"} onClick={() => setDx("claude")} style={{ color: dx === "claude" ? "var(--claude)" : undefined }}>Cosa fa Claude</button>

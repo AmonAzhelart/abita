@@ -119,9 +119,30 @@ textarea { resize: vertical; }
 .attrezzi button svg { width: 20px; height: 20px; color: var(--fg); }
 .attrezzi button[aria-pressed="true"] { background: var(--chip); color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .attrezzi button.appunto svg, .attrezzi button.appunto { color: var(--nota); }
-.catalogo { position: absolute; z-index: 4; left: 50%; bottom: 76px; transform: translateX(-50%); width: min(560px, calc(100% - 24px)); display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 4px; padding: 8px; max-height: 50%; overflow: auto; }
-.catalogo button { font-size: 13px; min-height: 34px; text-align: left; }
-.catalogo button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.catalogo { position: absolute; z-index: 4; left: 50%; bottom: 76px; transform: translateX(-50%); width: min(640px, calc(100% - 24px)); max-height: min(62%, 560px); overflow: auto; padding: 12px; display: grid; gap: 12px; }
+.catalogo h3 { font: 600 12.5px var(--ui); color: var(--muted); margin: 0 0 6px 2px; }
+.catalogo .voci { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+.catalogo .voci button { display: grid; justify-items: center; gap: 2px; padding: 8px 6px 6px; min-height: 0; border-radius: 10px; border: 1px solid transparent; background: var(--chip); text-align: center; }
+.catalogo .voci button:hover { border-color: var(--line); background: var(--panel); }
+.catalogo .voci button[aria-selected="true"] { border-color: var(--accent); background: var(--panel); box-shadow: inset 0 0 0 1px var(--accent); }
+.catalogo .voci svg { width: 64px; height: 46px; }
+.catalogo .voci svg * { vector-effect: non-scaling-stroke; }
+.catalogo .voci span { font-size: 12.5px; font-weight: 500; text-transform: capitalize; }
+.catalogo .voci small { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.opzioni-muro { position: absolute; z-index: 4; left: 50%; bottom: 76px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 8px 12px; max-width: calc(100% - 24px); flex-wrap: wrap; justify-content: center; }
+.opzioni-muro .gruppo { display: flex; align-items: center; gap: 6px; }
+.opzioni-muro .etichetta { margin: 0; }
+.opzioni-muro .segmenti button { min-height: 28px; padding: 0 9px; font-size: 13px; }
+.opzioni-muro .profilo { width: 64px; height: 26px; }
+.opzioni-muro .aiuto-muro { flex-basis: 100%; margin: 0; text-align: center; font-size: 12px; color: var(--muted); }
+.mini { width: 58px; min-height: 30px; padding: 4px 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.mini-campo { display: inline-flex; align-items: center; gap: 4px; font: 600 12px var(--ui); color: var(--muted); }
+.profilo { display: block; width: 100%; height: 58px; }
+.profilo path { fill: var(--claude-tenue); stroke: var(--claude); stroke-width: 1.5; }
+.profilo text { font: 600 11px var(--ui); fill: var(--claude); }
+.storia-btn { display: flex; gap: 2px; }
+.storia-btn .btn { min-width: 32px; padding: 0; font-size: 16px; }
+.storia-btn .btn:disabled { opacity: 0.35; cursor: default; }
 .suggerimento { position: absolute; z-index: 3; left: 50%; bottom: 82px; transform: translateX(-50%); font-size: 13px; padding: 6px 12px; border-radius: 999px; color: var(--muted); pointer-events: none; white-space: nowrap; }
 .avviso { position: absolute; z-index: 6; left: 50%; top: 14px; transform: translateX(-50%); max-width: min(520px, calc(100% - 24px)); padding: 9px 14px; border-radius: 12px; font-size: 14px; display: flex; gap: 10px; align-items: center; animation: entra 0.25s ease-out; }
 .avviso.claude { border-color: var(--claude); color: var(--claude); }
@@ -167,6 +188,24 @@ textarea { resize: vertical; }
 .maniglia { fill: var(--panel); stroke: var(--accent); stroke-width: 2px; vector-effect: non-scaling-stroke; cursor: move; }
 .bozza { fill: rgba(37, 87, 167, 0.08); stroke: var(--accent); stroke-width: 2px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; pointer-events: none; }
 .spillo { cursor: pointer; }
+.pianta-box { position: absolute; inset: 0; }
+.pianta-box > .pianta { position: absolute; inset: 0; }
+.nastro { fill: rgba(37, 87, 167, 0.22); stroke: var(--accent); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.asse { fill: none; stroke: var(--accent); stroke-width: 1px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+.nodo { fill: var(--panel); stroke: var(--accent); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.guida { stroke: var(--claude); stroke-width: 1px; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.presa { fill: var(--panel); stroke: var(--accent); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.quota-viva { stroke: var(--accent); stroke-width: 1.5px; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.giro line { stroke: var(--accent); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.giro circle { fill: var(--accent); stroke: var(--panel); stroke-width: 2px; vector-effect: non-scaling-stroke; cursor: grab; }
+.pianta-zoom { position: absolute; z-index: 3; right: 12px; top: 50%; transform: translateY(-50%); display: grid; gap: 2px; padding: 4px; }
+.pianta-zoom button { min-height: 36px; width: 36px; padding: 0; font-size: 18px; display: grid; place-items: center; }
+.pianta-zoom button:hover { background: var(--chip); }
+.pianta-zoom svg { width: 16px; height: 16px; }
+.pianta-scala { position: absolute; z-index: 2; left: 14px; bottom: 14px; display: flex; align-items: center; gap: 8px; font: 500 12px var(--ui); color: var(--muted); pointer-events: none; font-variant-numeric: tabular-nums; }
+.pianta-scala .barra { height: 6px; border: 1.5px solid var(--muted); border-top: 0; }
+.pianta-scala .coord { margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--panel-glass); border: 1px solid var(--line); }
+.visore .pianta-scala { bottom: auto; top: 120px; }
 .spillo text { font: 600 13px var(--ui); fill: #fff; pointer-events: none; }
 
 /* appunti e attività */
@@ -198,6 +237,41 @@ textarea { resize: vertical; }
   .ed-mobile { display: inline-flex; }
   .ed-top .nascondi-mobile { display: none; }
 }
+
+/* pannello proprietà */
+.proprieta { padding: 14px; display: grid; gap: 12px; border-bottom: 1px solid var(--line); background: var(--bg); max-height: 62%; overflow: auto; flex: none; }
+.proprieta > header { display: flex; align-items: flex-start; gap: 8px; }
+.proprieta > header div { flex: 1; display: grid; gap: 1px; }
+.proprieta > header b { font: 400 19px/1.15 var(--display); }
+.proprieta > header small { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.campo { display: grid; gap: 5px; font-size: 12.5px; color: var(--muted); font-weight: 500; }
+.campo > span em { font-style: normal; color: var(--fg); margin-left: 4px; font-weight: 400; text-transform: capitalize; }
+.campo input, .campo select { width: 100%; color: var(--fg); font-weight: 400; font-size: 14px; background: var(--panel); }
+.campo .segmenti { display: grid; width: 100%; }
+.campo .segmenti button { min-height: 30px; font-size: 13px; padding: 0 6px; }
+.campo-num { position: relative; display: block; }
+.campo-num input { padding-right: 34px; font-variant-numeric: tabular-nums; }
+.campo-num i { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-style: normal; font-size: 12px; color: var(--muted); pointer-events: none; }
+.campi-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.campi-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.interruttore { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); white-space: normal; }
+.interruttore span { display: grid; }
+.interruttore b { font-weight: 500; font-size: 14px; }
+.interruttore small { color: var(--muted); font-size: 12px; }
+.interruttore i { width: 34px; height: 20px; border-radius: 999px; background: var(--chip); border: 1px solid var(--line); position: relative; flex: none; transition: background 0.15s; }
+.interruttore i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform 0.15s, background 0.15s; }
+.interruttore[aria-checked="true"] i { background: var(--accent); border-color: transparent; }
+.interruttore[aria-checked="true"] i::after { transform: translateX(14px); background: var(--accent-ink); }
+.tavolozza { display: flex; flex-wrap: wrap; gap: 5px; }
+.tavolozza button, .tavolozza .su-misura { width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.15); }
+.tavolozza button[aria-checked="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.tavolozza .su-misura { display: grid; place-items: center; position: relative; overflow: hidden; color: var(--muted); font-size: 15px; cursor: pointer; background: var(--chip); }
+.tavolozza .su-misura input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.ruota { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+.ruota input[type="range"] { padding: 0; min-height: 0; border: 0; background: none; accent-color: var(--accent); }
+.proprieta .azioni { display: flex; gap: 6px; }
+.riga-avanzata summary { font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.riga-avanzata .riga-input { margin-top: 6px; }
 
 /* --- pagina del cliente */
 .visore { position: fixed; inset: 0; overflow: hidden; background: var(--sky); }

@@ -1,7 +1,7 @@
 // Controllo veloce della lingua: node lib/lingua.check.ts (npm run verifica)
 import assert from "node:assert/strict";
 import { ESEMPIO } from "./esempio.ts";
-import { aggiungi, dentro, imposta, impostaPunti, leggi, righeCambiate, sposta, type Apertura, type Arredo, type Stanza } from "./lingua.ts";
+import { aggiungi, dentro, imposta, impostaPunti, leggi, segna, righeCambiate, sposta, type Apertura, type Arredo, type Stanza } from "./lingua.ts";
 import { passaggi, testoPassaggi } from "./passaggi.ts";
 
 const M = leggi(ESEMPIO);
@@ -60,4 +60,6 @@ const sc = I.el.find((e): e is Arredo => e.tipo === "arredo" && e.nome === "Scal
 assert.deepEqual([sc.L, sc.P, sc.ruota, sc.calpestabile], [100, 300, 90, true]);
 assert.match(I.errori.map(e => e.msg).join(), /"Boh": non c'è/);
 assert.ok(!I.errori.some(e => /non entra/.test(e.msg)), "una porta a cavallo di due tratti allineati entra");
+assert.equal(segna("muro 0,0 >10 # x", 0, "chiudi", true), "muro 0,0 >10 chiudi # x");
+assert.equal(segna("muro 0,0 >10 chiuso spessore 9", 0, "chiudi", false), "muro 0,0 >10 spessore 9");
 console.log("lingua ok");
