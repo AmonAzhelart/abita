@@ -386,7 +386,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       if (e.key === "?") { setScorciatoie(x => !x); return; }
       if (e.key === "Escape") { if (scorciatoie) { setScorciatoie(false); return; } setStrumento("sposta"); setSel(null); setBozza(null); setCatalogo(false); return; }
       if ((e.key === "Delete" || e.key === "Backspace") && sel != null && strumento === "sposta") { e.preventDefault(); elimina(sel); return; }
-      if (e.key.startsWith("Arrow") && sel != null && strumento === "sposta" && vista !== "3d") {    // frecce: 1 cm, con Maiusc 10 cm
+      if (e.key.startsWith("Arrow") && sel != null && strumento === "sposta") {    // frecce, in pianta e in 3D: 1 cm, con Maiusc 10 cm
         e.preventDefault();
         const d = e.shiftKey ? 10 : 1;
         cambia(sposta(R.current.testo, sel, e.key === "ArrowLeft" ? -d : e.key === "ArrowRight" ? d : 0, e.key === "ArrowUp" ? -d : e.key === "ArrowDown" ? d : 0), true);
