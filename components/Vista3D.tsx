@@ -54,8 +54,8 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
     const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(45, 1, 0.05, 800), ctl = new OrbitControls(cam, r.domElement);
     ctl.enableDamping = true;
     ctl.dampingFactor = 0.16;                 // segue il mouse da vicino: con il valore di serie la camera "rincorre" e sembra lenta
-    ctl.zoomToCursor = true;                  // lo zoom va dove punti, non al centro
-    ctl.zoomSpeed = 1.4;
+    ctl.zoomToCursor = true;                  // il pizzico con due dita va dove punti (la rotella la gestiamo noi, sotto)
+    ctl.minDistance = 0.03;
     ctl.maxPolarAngle = Math.PI * 0.495;
     scene.add(new THREE.HemisphereLight(0xffffff, 0x6f6a60, 1.25));
     const sun = new THREE.DirectionalLight(0xfff6e8, 1.15);
@@ -89,11 +89,39 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
     misura();
     const ro = new ResizeObserver(misura);
     ro.observe(el);
-    let raf = 0;
-    const v = new THREE.Vector3();
+    let raf = 0, ultimo = performance.now();
+    const v = new THREE.Vector3(), dir = new THREE.Vector3();
+    // zoom con la rotella: scivola verso il punto sotto il mouse in qualche fotogramma invece di saltare a ogni tacca,
+    // e vicino alle cose avanza dritto invece di fermarsi (con i controlli di serie si piantava a 50 cm dal centro)
+    const zoom = { resto: 0, p: new THREE.Vector3(), t: -1e9, x: 0, y: 0 };
+    const avvicina = (k: number) => {            // k > 0 avvicina, in "e-volte" della distanza
+      const P = zoom.p, d = cam.position.distanceTo(P), f = Math.exp(-k), sc = S.current?.sc;
+      if (k < 0) {                               // indietro: lungo la linea di vista, il centro di rotazione resta dov'è
+        if (sc && cam.position.distanceTo(sc.centro) > sc.raggio * 8) { zoom.resto = 0; return; }
+        const r0 = cam.position.distanceTo(ctl.target);
+        cam.position.sub(ctl.target).multiplyScalar(Math.max(f, 1 - (k * 1.5) / r0)).add(ctl.target);
+      } else if (d * (1 - f) < k * 1.5) {        // a un passo dalle cose: avanti dritto, così si attraversano muri e soffitti
+        if (d > 0.01) dir.subVectors(P, cam.position).divideScalar(d); else cam.getWorldDirection(dir);
+        dir.multiplyScalar(k * 1.5);
+        cam.position.add(dir); ctl.target.add(dir); P.add(dir);
+      } else {
+        cam.position.sub(P).multiplyScalar(f).add(P);
+        ctl.target.sub(P).multiplyScalar(f).add(P);
+      }
+      const giu = ground.position.y + 0.08;      // mai sotto terra
+      if (cam.position.y < giu) cam.position.y = giu;
+      if (ctl.target.y < giu - 0.05) ctl.target.y = giu - 0.05;
+    };
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
-      const s = S.current!;
+      const s = S.current!, dt = Math.min(100, now - ultimo);
+      ultimo = now;
+      if (zoom.resto) {
+        const k = Math.abs(zoom.resto) < 0.003 ? zoom.resto : zoom.resto * (1 - Math.exp(-dt / 65));
+        zoom.resto -= k;
+        avvicina(k);
+        s.needs = true;
+      }
       if (s.anim) {
         const k = Math.min(1, (now - s.anim.t0) / 750), e = 1 - Math.pow(1 - k, 3);
         cam.position.lerpVectors(s.anim.p0, s.anim.p1, e);
@@ -117,10 +145,6 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
       }
     };
     raf = requestAnimationFrame(loop);
-
-    // la rotella sopra i nomi delle stanze fa comunque zoom
-    const passa = (e: WheelEvent) => { e.preventDefault(); r.domElement.dispatchEvent(new WheelEvent("wheel", e)); };
-    tags.current?.addEventListener("wheel", passa, { passive: false });
 
     // scegliere e spostare in 3D: un clic sceglie l'elemento, un arredo si trascina sul suo pavimento e si aggancia ai muri
     const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), suolo = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), pt = new THREE.Vector3();
@@ -237,6 +261,23 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
       setTimeout(() => { if (S.current?.trascina === t) libera(true); }, 500);   // se il testo non è cambiato, il pezzo torna al suo posto
     };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && presa?.a) { libera(true); presa = null; ctl.enabled = true; } };
+    const rotella = (e: WheelEvent) => {         // anche sopra i nomi delle stanze
+      e.preventDefault();
+      e.stopPropagation();                       // ai controlli della camera non arriva
+      if (presa?.a) return;
+      let dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 100 : e.deltaY;
+      if (e.ctrlKey) dy *= 6;                    // pizzico sul touchpad
+      if (e.timeStamp - zoom.t > 250 || Math.hypot(e.clientX - zoom.x, e.clientY - zoom.y) > 6) {   // gesto nuovo: verso cosa
+        mira(e);
+        const sc = S.current?.sc, h = sc && ray.intersectObjects([...sc.piani.values(), sc.tetti, ground].filter(g => g.visible), true)[0];
+        if (h) zoom.p.copy(h.point); else ray.ray.at(cam.position.distanceTo(ctl.target), zoom.p);
+        zoom.x = e.clientX;
+        zoom.y = e.clientY;
+      }
+      zoom.t = e.timeStamp;
+      zoom.resto = Math.max(-2, Math.min(2, zoom.resto - dy * 0.0017));
+    };
+    el.addEventListener("wheel", rotella, { capture: true, passive: false });
     el.addEventListener("pointerdown", giu, { capture: true });  // prima dei controlli della camera
     r.domElement.addEventListener("pointermove", muovi);
     r.domElement.addEventListener("pointerup", su);
@@ -245,7 +286,7 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
 
     return () => {
       cancelAnimationFrame(raf); ro.disconnect(); mq.removeEventListener("change", tema);
-      el.removeEventListener("pointerdown", giu, { capture: true }); window.removeEventListener("keydown", esc);
+      el.removeEventListener("pointerdown", giu, { capture: true }); el.removeEventListener("wheel", rotella, { capture: true }); window.removeEventListener("keydown", esc);
       ctl.dispose(); S.current?.sc?.dispose(); velo.dispose();
       r.dispose(); r.forceContextLoss(); r.domElement.remove(); S.current = null;
     };
@@ -355,7 +396,6 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
     else if (volo.tipo === "entra" && st) { p1 = st.pos.clone().setY(st.pos.y + 0.7); t1 = p1.clone().add(new THREE.Vector3(0.01, -0.05, -0.6)); }
     else if (volo.tipo === "stanza" && st) { t1 = st.pos.clone(); p1 = st.pos.clone().add(new THREE.Vector3(-2.6, 6.2, 5.4)); }
     else { t1 = c.clone(); p1 = c.clone().add(new THREE.Vector3(R * 0.9, R * 0.85, R * 1.15)); }
-    s.ctl.minDistance = volo.tipo === "entra" ? 0.01 : 0.5;
     s.anim = { t0: performance.now(), p0: s.cam.position.clone(), t0v: s.ctl.target.clone(), p1, t1 };
   }, [volo]);
 

@@ -115,7 +115,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const traccia = useRef<((t: Traccia | null) => void) | null>(null);        // la pianta passa al 3D il muro in corso
   const centro = useRef<HTMLElement>(null);
 
-  const R = useRef({ testo, rev: iniziale.rev, sporco: false, inVolo: false, timer: 0 as unknown as ReturnType<typeof setTimeout>, visto: Math.max(0, ...iniziale.attivita.map(a => a.quando)), passato: [] as string[], futuro: [] as string[], ultimoPush: 0 });
+  const R = useRef({ testo, rev: iniziale.rev, sporco: false, inVolo: false, timer: 0 as unknown as ReturnType<typeof setTimeout>, visto: Math.max(0, ...iniziale.attivita.map(a => a.quando)), passato: [] as string[], futuro: [] as string[], ultimoPush: 0, nuova: false });
 
   const mostra = useCallback((t: string, claude = false, azione?: [string, () => void]) => { setAvviso({ t, claude, azione }); setTimeout(() => setAvviso(a => (a?.t === t ? null : a)), claude || azione ? 6000 : 3500); }, []);
 
@@ -177,6 +177,12 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       if (r.inVolo || document.hidden) return;
       const res = await fetch(`/api/studio?id=${id}&rev=${r.rev}`).catch(() => null);
       if (res?.status === 200 && !R.current.inVolo) applica(await res.json());
+      const v = res?.headers.get("x-versione");
+      if (v && process.env.VERSIONE && v !== process.env.VERSIONE && !r.nuova) {   // è uscita una versione nuova: si ricarica dopo aver salvato
+        r.nuova = true;
+        const ricarica = () => { if (R.current.sporco || R.current.inVolo) setTimeout(ricarica, 300); else location.reload(); };
+        setAvviso({ t: "È uscita una versione nuova di Abita", azione: ["Ricarica", ricarica] });
+      }
     }, 1500);
     return () => clearInterval(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps

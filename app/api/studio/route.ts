@@ -6,8 +6,9 @@ export async function GET(req: Request) {
   const u = new URL(req.url), p = await P.carica(u.searchParams.get("id") ?? "");
   if (!p) return NextResponse.json({ errore: "Progetto non trovato" }, { status: 404 });
   if (u.searchParams.has("modelli")) return NextResponse.json(await P.meshModelli(p));
-  if (String(p.rev) === u.searchParams.get("rev")) return new Response(null, { status: 204 });
-  return NextResponse.json(p);
+  const h = { "x-versione": process.env.VERSIONE ?? "" };
+  if (String(p.rev) === u.searchParams.get("rev")) return new Response(null, { status: 204, headers: h });
+  return NextResponse.json(p, { headers: h });
 }
 
 export async function POST(req: Request) {
