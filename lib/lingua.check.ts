@@ -6,6 +6,7 @@ import { passaggi, testoPassaggi } from "./passaggi.ts";
 import { muroInCorso } from "./scena.ts";
 import { ancora } from "./ancora.ts";
 import { riepilogo, uso } from "./verifiche.ts";
+import { altezzaLibera } from "./altezza.ts";
 
 const M = leggi(ESEMPIO);
 assert.deepEqual(M.errori, [], "l'esempio non deve avere errori");
@@ -126,4 +127,11 @@ stanza Camera 10,10 290,250`)).piani[0].stanze[0].avvisi.join(" | ");
 assert.match(cp, /6,7 m²: per una camera singola ne servono almeno 9/);
 assert.match(cp, /nessuna finestra/);
 assert.match(cp, /alta 260 cm/);
+// altezza libera: in soggiorno fino al solaio del primo piano; sulla scala fino al tetto piano sopra il buco
+assert.deepEqual([altezzaLibera(M, "terra", { x: 300, y: 450 }).libera, altezzaLibera(M, "terra", { x: 300, y: 450 }).sopra], [280, "solaio del piano Primo"]);
+const su = altezzaLibera(M, "terra", { x: 755, y: 500 });
+assert.match(su.sotto, /gradino della scala a U/);
+assert.equal(su.sopra, "tetto");
+assert.equal(su.cima, 580 - 0);
+assert.equal(altezzaLibera(M, "primo", { x: 755, y: 600 }).buco, true, "al primo piano lì c'è il buco della scala");
 console.log("lingua ok");

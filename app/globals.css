@@ -410,3 +410,20 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6
   .tavola:last-child { break-after: auto; }
   .tavola-esce { display: none; }
 }
+
+/* altezza libera */
+.alto-scheda { position: absolute; z-index: 6; right: 16px; top: 64px; width: min(300px, calc(100% - 32px)); display: grid; gap: 4px; padding: 12px 14px; border-radius: 14px; font-size: 14px; }
+.alto-scheda header { display: flex; justify-content: space-between; align-items: center; }
+.alto-scheda p { margin: 0; }
+.alto-valore { font: 400 30px/1.05 var(--display); }
+.alto-basso { color: #c2410c; font-weight: 500; }
+.alto-giusto { color: #b7791f; font-weight: 500; }
+.alto-ok { color: #2f9e44; font-weight: 500; }
+.catalogo-cerca { width: 100%; }
+.conti-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.conti-2 span { display: grid; font-size: 13px; color: var(--muted); }
+.conti-2 b { font: 400 20px/1.2 var(--display); color: var(--fg); }
+.abaco { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.abaco td { padding: 5px 0; border-top: 1px solid var(--line); vertical-align: top; }
+.abaco td:not(:first-child) { text-align: right; padding-left: 10px; white-space: nowrap; }
+.abaco small { display: block; color: var(--muted); font-size: 12px; }

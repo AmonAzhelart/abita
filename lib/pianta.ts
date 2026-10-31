@@ -26,7 +26,7 @@ export function riquadro(M: Modello, piano?: string) {
   const st = piano ? M.el.flatMap(e => (e.tipo === "stanza" && e.piano === piano ? e.punti : [])) : [];   // le stanze del piano, se ci sono
   const pts = st.length ? st : M.el.flatMap(e => e.tipo === "muro" || e.tipo === "stanza" ? e.punti : e.tipo === "arredo" ? [e.a] : []);
   if (!pts.length) return { x: -100, y: -100, w: 1200, h: 900 };
-  const xs = pts.map(p => p.x), ys = pts.map(p => p.y), m = 80;
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y), m = 120;   // ci stanno anche le quote d'ingombro
   return { x: Math.min(...xs) - m, y: Math.min(...ys) - m, w: Math.max(...xs) - Math.min(...xs) + 2 * m, h: Math.max(...ys) - Math.min(...ys) + 2 * m };
 }
 
@@ -192,6 +192,19 @@ export function disegnaPianta(M: Modello, o: OpzPianta) {
       ? linea({ x: a.x - s, y: (a.y + b.y) / 2 }, { x: b.x + s, y: (a.y + b.y) / 2 }, D) : linea({ x: (a.x + b.x) / 2, y: a.y - s }, { x: (a.x + b.x) / 2, y: b.y + s }, D)) : ""), "tetto"));
   }
   etichetteStanze(M, o, C, et);
+  const muri = qui.flatMap(e => (e.tipo === "muro" && e.altezza >= 150 ? pezziMuro(M, e, false).flatMap(z => z.pts) : []));
+  if (o.quote && muri.length) {                          // l'ingombro della casa: larghezza e profondità sul filo esterno dei muri
+    const xs = muri.map(q => q.x), ys = muri.map(q => q.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const S = st("none", C.quota, 1), d = 55, t = 7;
+    const catena = (a: Pt, b: Pt, n: Pt, rot: number) => {
+      const A = { x: a.x + n.x * d, y: a.y + n.y * d }, B = { x: b.x + n.x * d, y: b.y + n.y * d };
+      sv.push(`<g class="ingombro">${linea(A, B, S)}${linea({ x: a.x + n.x * 12, y: a.y + n.y * 12 }, { x: A.x + n.x * 8, y: A.y + n.y * 8 }, S)}${linea({ x: b.x + n.x * 12, y: b.y + n.y * 12 }, { x: B.x + n.x * 8, y: B.y + n.y * 8 }, S)}`
+        + [A, B].map(q => linea({ x: q.x - t * 0.7, y: q.y + t * 0.7 }, { x: q.x + t * 0.7, y: q.y - t * 0.7 }, st("none", C.quota, 1.4))).join("") + `</g>`);   // le tacche a 45°
+      et.push({ x: (A.x + B.x) / 2 + n.x * 14, y: (A.y + B.y) / 2 + n.y * 14, testo: String(Math.round(Math.hypot(b.x - a.x, b.y - a.y))), dim: 15, ruota: rot, colore: C.quota, peso: 700 });
+    };
+    catena({ x: x0, y: y0 }, { x: x1, y: y0 }, { x: 0, y: -1 }, 0);
+    catena({ x: x0, y: y0 }, { x: x0, y: y1 }, { x: -1, y: 0 }, -90);
+  }
   if (o.passaggi) for (const p of o.passaggi.problemi) {
     const R = st("none", "#D9480F", 3);
     sv.push(cerchio(p.p.x, p.p.y, 18, st("rgba(217,72,15,0.15)", "#D9480F", 2.5)) + linea({ x: p.p.x - 9, y: p.p.y - 9 }, { x: p.p.x + 9, y: p.p.y + 9 }, R) + linea({ x: p.p.x + 9, y: p.p.y - 9 }, { x: p.p.x - 9, y: p.p.y + 9 }, R));

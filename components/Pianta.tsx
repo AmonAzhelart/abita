@@ -9,12 +9,14 @@ import type { Esito } from "@/lib/passaggi";
 import { contorno, disegnaPianta, riquadro } from "@/lib/pianta";
 import type { Appunto, Foto } from "@/lib/progetti";
 
-export type Strumento = "sposta" | "muro" | "stanza" | "foro" | "porta" | "finestra" | "arredo" | "misura" | "appunto" | "calibra" | "foto" | "commento";
+export type Strumento = "sposta" | "muro" | "stanza" | "foro" | "porta" | "finestra" | "arredo" | "misura" | "appunto" | "calibra" | "foto" | "commento" | "altezza";
 export type OpzMuro = { spessore: number; a: number; b: number };
 type Props = {
   modello: Modello; piano: string; quote?: boolean; passaggi?: Esito | null; modifica?: boolean;
   strumento?: Strumento; modoAppunto?: "punto" | "linea" | "zona"; muro?: OpzMuro;
   sel?: number | null; evid?: number[]; appunti?: (Appunto & { n: number })[]; notaSel?: string | null;
+  /** Il punto dove si è misurata l'altezza libera, con la misura da scriverci sopra. */
+  segno?: { p: Pt; testo: string; basso: boolean } | null;
   foto?: Foto[]; fotoAttiva?: string | null; centra?: { p: Pt; n: number }; adatta?: number;
   onSel?: (riga: number | null) => void; onSposta?: (riga: number, dx: number, dy: number, ruota?: number) => void;
   onVertici?: (riga: number, punti: Pt[]) => void; onDisegna?: (cosa: Strumento, punti: Pt[]) => void;
@@ -254,7 +256,7 @@ export default function Pianta(p: Props) {
         } else setPts([...pts, s]);
       } else if (strumento === "misura" || strumento === "calibra") {
         if (pts.length) { p.onDisegna?.(strumento, [pts[0], s]); setPts([]); } else setPts([s]);
-      } else p.onDisegna?.(strumento, [strumento === "commento" || strumento === "appunto" ? q : s]);
+      } else p.onDisegna?.(strumento, [strumento === "commento" || strumento === "appunto" || strumento === "altezza" ? q : s]);
     }
   }
 
@@ -355,6 +357,11 @@ export default function Pianta(p: Props) {
             <text x={a.a.x} y={a.a.y} fontSize={px(13)} textAnchor="middle" dominantBaseline="central">{a.n}</text>
           </g>
         ))}
+        {p.segno && <g className="segno-alto" pointerEvents="none">
+          <line x1={p.segno.p.x} y1={p.segno.p.y} x2={p.segno.p.x} y2={p.segno.p.y - px(14)} style={{ stroke: p.segno.basso ? "#d9480f" : "var(--accent)", strokeWidth: 2, vectorEffect: "non-scaling-stroke" }} />
+          <circle cx={p.segno.p.x} cy={p.segno.p.y} r={px(5)} style={{ fill: p.segno.basso ? "#d9480f" : "var(--accent)", stroke: "var(--panel)", strokeWidth: 2, vectorEffect: "non-scaling-stroke" }} />
+          {etichettaPx(p.segno.p.x, p.segno.p.y - px(26), p.segno.testo, p.segno.basso ? "#d9480f" : undefined)}
+        </g>}
         {strumento === "muro" && ultimoP && (() => {                    // il muro che stai tirando, con il suo spessore
           const fine = cur && !dig ? cur.p : null, catena = [...pts, ...(fine ? [fine] : [])];
           return <g pointerEvents="none">

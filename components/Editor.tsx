@@ -3,10 +3,11 @@
 // Ogni modifica (scritta o disegnata) cambia il testo; il testo si salva da solo e Claude lo vede subito.
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as TastoReact, type PointerEvent as Puntatore } from "react";
-import { aggiungi, angoli, dentro, distSeg, imposta, impostaPunti, leggi, segmenti, sposta, togli, type Arredo, type Modello, type Pt, type Stanza } from "@/lib/lingua";
+import { aggiungi, angoli, dentro, distSeg, imposta, impostaPunti, leggi, segmenti, slug, sposta, togli, type Arredo, type Modello, type Pt, type Stanza } from "@/lib/lingua";
 import { hex } from "@/lib/arredi";
 import { passaggi } from "@/lib/passaggi";
 import { NOMI_USO, riepilogo } from "@/lib/verifiche";
+import { altezzaLibera, type Altezza } from "@/lib/altezza";
 import type { Appunto, Foto, Progetto } from "@/lib/progetti";
 import Catalogo from "./Catalogo";
 import Codice from "./Codice";
@@ -15,6 +16,23 @@ import Proprieta, { pianoSopra, Profilo, titolo } from "./Proprieta";
 import Vista3D, { useMesh, type Traccia, type Volo } from "./Vista3D";
 
 const m2 = (v: number) => v.toFixed(1).replace(".", ",");
+const metri = (cm: number) => (cm / 100).toFixed(2).replace(".", ",");
+
+/** La scheda dell'altezza libera: quanto spazio c'è, da dove a dove, e se ci si sta in piedi. */
+function Alto({ r, onChiudi }: { r: Altezza; onChiudi: () => void }) {
+  const piedi = !r.sotto.startsWith("sopra "), L = r.libera;
+  return (
+    <div className="alto-scheda vetro" role="status">
+      <header><span className="etichetta">Altezza libera</span><button className="btn piccolo" onClick={onChiudi} aria-label="Chiudi">✕</button></header>
+      {r.buco ? <b className="alto-valore">Buco nel pavimento</b> : <b className="alto-valore">{L === null ? "Aperto" : `${metri(L)} m`}</b>}
+      {r.buco ? <p>Qui sotto c&apos;è la scala: misura dal piano di sotto.</p> : <>
+        <p><span className="tenue">Sotto:</span> {r.sotto}{r.base ? `, a ${r.base} cm` : ""}</p>
+        <p><span className="tenue">Sopra:</span> {r.sopra}{r.cima !== null ? `, a ${r.cima} cm` : ""}</p>
+        {piedi && L !== null && <p className={L < 200 ? "alto-basso" : L < 210 ? "alto-giusto" : "alto-ok"}>{L < 200 ? `Sotto i 2 m si batte la testa: mancano ${200 - L} cm` : L < 210 ? "Va bene per i 2 m, non per i 2,10 m chiesti da alcuni regolamenti" : "Ci si sta in piedi comodi"}</p>}
+      </>}
+    </div>
+  );
+}
 type Rpc = { ok: true; doc: Progetto } | { ok: false; stato: number; errore: string };
 async function rpc(azione: string, dati: object): Promise<Rpc> {
   const r = await fetch("/api/studio", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ azione, ...dati }) });
@@ -66,17 +84,17 @@ const COL_NOTA = (a: Appunto) => (a.stato === "fatta" ? "var(--fatta)" : a.da ==
 const I = {
   sposta: "M5 3l14 8-6 2-2 6z", muro: "M3 8h18v8H3z M9 8v8 M15 8v8", stanza: "M4 4h16v16H4z M4 12h7", porta: "M5 21V4h9v17 M14 4a10 10 0 0 1 5 9",
   finestra: "M4 5h16v14H4z M12 5v14 M4 12h16", arredo: "M4 11V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3 M3 11h18v6H3z M5 17v2 M19 17v2", misura: "M3 17L17 3l4 4L7 21z M7 13l2 2 M10 10l2 2 M13 7l2 2",
-  appunto: "M4 4h16v12H8l-4 4z", foro: "M3 3h18v18H3z M8 8h2.5 M13.5 8H16v2.5 M16 13.5V16h-2.5 M10.5 16H8v-2.5 M8 10.5V8", foto: "M4 6h16v12H4z M8 14l3-3 3 3 2-2 4 4",
+  appunto: "M4 4h16v12H8l-4 4z", altezza: "M12 4v15 M8.5 7.5L12 4l3.5 3.5 M4 20h16", foro: "M3 3h18v18H3z M8 8h2.5 M13.5 8H16v2.5 M16 13.5V16h-2.5 M10.5 16H8v-2.5 M8 10.5V8", foto: "M4 6h16v12H4z M8 14l3-3 3 3 2-2 4 4",
 };
 const Ico = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
-const ATTREZZI: [Strumento, string, string][] = [["sposta", "Sposta", "V"], ["muro", "Muro", "M"], ["stanza", "Stanza", "S"], ["foro", "Buco", "B"], ["porta", "Porta", "P"], ["finestra", "Finestra", "F"], ["arredo", "Arredo", "A"], ["misura", "Misura", "Q"], ["appunto", "Appunto", "N"]];
+const ATTREZZI: [Strumento, string, string][] = [["sposta", "Sposta", "V"], ["muro", "Muro", "M"], ["stanza", "Stanza", "S"], ["foro", "Buco", "B"], ["porta", "Porta", "P"], ["finestra", "Finestra", "F"], ["arredo", "Arredo", "A"], ["misura", "Misura", "Q"], ["altezza", "Altezza", "H"], ["appunto", "Appunto", "N"]];
 const AIUTO: Partial<Record<Strumento, string>> = {
   sposta: "Clic per scegliere, trascina per spostare. Canc elimina, R ruota",
   muro: "Clic per ogni angolo · scrivi una misura e Invio per un tratto esatto · doppio clic per finire",
   stanza: "Trascina da un angolo all'altro (misure interne)",
   foro: "Trascina un rettangolo: lì il pavimento si apre, per la scala che sale da sotto",
   porta: "Clic sopra un muro", finestra: "Clic sopra un muro", arredo: "Clic dove va il centro",
-  misura: "Clic sul primo punto e sul secondo", calibra: "Clic su due punti della foto di cui sai la distanza vera",
+  misura: "Clic sul primo punto e sul secondo", altezza: "Clic su un punto: quanto spazio c'è sopra la testa", calibra: "Clic su due punti della foto di cui sai la distanza vera",
   foto: "Trascina la foto per metterla al suo posto",
 };
 
@@ -113,6 +131,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const [volo, setVolo] = useState<Volo>({ tipo: "panoramica", n: 0 });
   const [storia, setStoria] = useState<{ rev: number; chi: string; quando: number; righe: number }[] | null>(null);
   const [catalogo, setCatalogo] = useState(false);
+  const [alto, setAlto] = useState<{ p: Pt; piano: string; r: Altezza } | null>(null);   // l'ultima altezza libera misurata
   const [opzMuro, setOpzMuro] = useState({ spessore: 20, a: "", b: "" });   // a, b vuote = altezza del piano
   const [inCorso, setInCorso] = useState(false);                             // un muro a metà: Esc e Backspace sono suoi
   const traccia = useRef<((t: Traccia | null) => void) | null>(null);        // la pianta passa al 3D il muro in corso
@@ -213,6 +232,18 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
     if (gr !== undefined) t = imposta(t, riga, "ruota", gr ? String(gr) : null);
     cambia(t);
   };
+  /** Un piano nuovo in cima alla casa con i muri di quello che stai guardando: si parte dal perimetro e dai tramezzi già giusti. */
+  const nuovoPiano = () => {
+    const P = M.piani.find(x => x.id === piano);
+    if (!P) return;
+    const righe = R.current.testo.split("\n"), fine = M.piani.filter(x => x.riga > P.riga).map(x => x.riga).sort((a, b) => a - b)[0] ?? righe.length;
+    const muri = righe.slice(P.riga + 1, fine).filter(r => /^\s*muro\b/.test(r)).map(r => "  " + r.trim());
+    let nome = `${P.nome} copia`;
+    for (let k = 2; M.piani.some(x => x.nome === nome); k++) nome = `${P.nome} copia ${k}`;
+    cambia(R.current.testo.replace(/\s*$/, "") + `\n\npiano "${nome}" altezza ${P.altezza}\n` + (muri.length ? `  # muri copiati da ${P.nome}\n${muri.join("\n")}\n` : ""));
+    setPiano(slug(nome));
+    mostra(`Nuovo piano con ${muri.length} muri di ${P.nome}: rinominalo nel testo`, false, ["Annulla", annulla]);
+  };
   const duplica = (riga: number) => nuovaRiga(sposta(M.righe[riga].trim(), 0, 30, 30));
   const incolla = () => { if (!copiato.current) return; const r = sposta(copiato.current, 0, 30, 30); copiato.current = r; nuovaRiga(r); };
   const bucoScala = (a: Arredo) => {
@@ -251,6 +282,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       }
       case "arredo": nuovaRiga(`${cosa} a ${fmt(a.x)},${fmt(a.y)}`); return;
       case "misura": nuovaRiga(`misura ${fmt(a.x)},${fmt(a.y)} ${fmt(b.x)},${fmt(b.y)}`); return;
+      case "altezza": setAlto({ p: a, piano, r: altezzaLibera(M, piano, a, mesh) }); return;
       case "appunto": setBozza({ tipo: "appunto", a, b, forma: modoAppunto }); setScritto(""); return;
       case "calibra": setBozza({ tipo: "calibra", a, b }); setScritto(""); return;
     }
@@ -460,7 +492,8 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       <main ref={centro} className={"ed-centro" + (vista === "divisa" ? " divisa" : "")} style={{ "--parte": `${parte * 100}%` } as CSSProperties}>
         {vista !== "3d" && <section className="lato lato-pianta" aria-label="Pianta">
           <Pianta modello={M} piano={piano} quote={quote} passaggi={es} modifica strumento={strumento} modoAppunto={modoAppunto} sel={sel} evid={evid}
-            appunti={filtro === "tutti" ? appunti : appunti.filter(a => a.stato === "da fare" || a.id === notaSel)} notaSel={notaSel} foto={p.foto} fotoAttiva={fotoAttiva} centra={centra} adatta={adatta}
+            appunti={filtro === "tutti" ? appunti : appunti.filter(a => a.stato === "da fare" || a.id === notaSel)} notaSel={notaSel}
+            segno={strumento === "altezza" && alto?.piano === piano ? { p: alto.p, testo: alto.r.buco ? "buco" : alto.r.libera === null ? "aperto" : `${metri(alto.r.libera)} m`, basso: (alto.r.libera ?? 999) < 200 && !alto.r.sotto.startsWith("sopra ") } : null} foto={p.foto} fotoAttiva={fotoAttiva} centra={centra} adatta={adatta}
             onSel={scegli} onSposta={posa}
             onVertici={(r, pts) => cambia(impostaPunti(R.current.testo, r, pts))} onDisegna={disegnato}
             muro={{ spessore: opzMuro.spessore, a: hA, b: hB }} onBozza={setInCorso}
@@ -470,6 +503,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
           {strumento === "appunto" && <div className="galleggia" style={{ bottom: 80, left: "50%", transform: "translateX(-50%)" }}>
             <div className="segmenti vetro">{(["punto", "linea", "zona"] as const).map(m => <button key={m} aria-pressed={modoAppunto === m} onClick={() => setModoAppunto(m)}>{m[0].toUpperCase() + m.slice(1)}</button>)}</div>
           </div>}
+          {strumento === "altezza" && alto?.piano === piano && <Alto r={alto.r} onChiudi={() => setAlto(null)} />}
           {catalogo && strumento === "arredo" && <Catalogo scelto={cosa} onScegli={k => { setCosa(k); setCatalogo(false); }} />}
           {strumento === "muro" && <div className="opzioni-muro vetro" role="group" aria-label="Opzioni del muro">
             <div className="gruppo">
@@ -511,6 +545,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
           <div className="segmenti vetro" role="group" aria-label="Piano">
             {M.piani.map(x => <button key={x.id} aria-pressed={piano === x.id} onClick={() => setPiano(x.id)}>{x.nome}</button>)}
             {vista === "3d" && <button aria-pressed={piano === "tutti"} onClick={() => setPiano("tutti")}>Tutta</button>}
+            {vista !== "3d" && <button onClick={nuovoPiano} title="Nuovo piano sopra la casa, con i muri di questo" aria-label="Nuovo piano con i muri di questo">+</button>}
           </div>
           {vista === "divisa" && comandiPianta}
           <span className="spazio" />
@@ -570,6 +605,21 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
           </div>)}
           {rie.pavimenti.length > 0 && <div className="blocco"><span className="etichetta" style={{ margin: 0 }}>Pavimenti</span>
             <div className="pavimenti">{rie.pavimenti.map(([c, a]) => <span key={c}><i style={{ background: hex(c) }} />{c.startsWith("#") ? "su misura" : c.replace("_", " ")} <b>{m2(a)} m²</b></span>)}</div>
+          </div>}
+          {rie.utile > 0 && <div className="blocco"><span className="etichetta" style={{ margin: 0 }}>Per il preventivo</span>
+            <div className="conti-2"><span>Pareti da pitturare<b>{m2(rie.pareti)} m²</b></span><span>Battiscopa<b>{m2(rie.battiscopa)} m</b></span></div>
+            <span className="piccolo tenue">Pareti: perimetro delle stanze per l&apos;altezza del piano, tolte porte e finestre. Battiscopa: perimetro tolte le porte.</span>
+          </div>}
+          {rie.serramenti.length > 0 && <div className="blocco"><span className="etichetta" style={{ margin: 0 }}>Abaco dei serramenti</span>
+            <table className="abaco">
+              <tbody>{rie.serramenti.map(s => (
+                <tr key={`${s.cosa}${s.larga}${s.alta}${s.davanzale}${s.scorrevole}`}>
+                  <td>{s.cosa.charAt(0).toUpperCase() + s.cosa.slice(1)}{s.scorrevole ? " scorrevole" : ""}<small>{s.piani.join(", ")}{s.cosa === "finestra" ? ` · davanzale ${s.davanzale}` : ""}</small></td>
+                  <td>{s.larga}×{s.alta}</td>
+                  <td>×{s.n}</td>
+                </tr>
+              ))}</tbody>
+            </table>
           </div>}
           <div className="blocco piccolo tenue">Verifiche del DM 5 luglio 1975: camere da 9 m² (doppie da 14), soggiorno da 14, finestre almeno 1/8 del pavimento nei locali abitabili, altezza 270 cm (240 nei bagni e nei locali di servizio). L&apos;uso della stanza si capisce dal nome.</div>
         </div>}
