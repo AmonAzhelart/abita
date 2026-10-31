@@ -8,7 +8,7 @@ import type { Esito } from "@/lib/passaggi";
 import { contorno, disegnaPianta, riquadro } from "@/lib/pianta";
 import type { Appunto, Foto } from "@/lib/progetti";
 
-export type Strumento = "sposta" | "muro" | "stanza" | "porta" | "finestra" | "arredo" | "misura" | "appunto" | "calibra" | "foto" | "commento";
+export type Strumento = "sposta" | "muro" | "stanza" | "foro" | "porta" | "finestra" | "arredo" | "misura" | "appunto" | "calibra" | "foto" | "commento";
 export type OpzMuro = { spessore: number; a: number; b: number };
 type Props = {
   modello: Modello; piano: string; quote?: boolean; passaggi?: Esito | null; modifica?: boolean;
@@ -17,7 +17,7 @@ type Props = {
   foto?: Foto[]; fotoAttiva?: string | null; centra?: { p: Pt; n: number }; adatta?: number;
   onSel?: (riga: number | null) => void; onSposta?: (riga: number, dx: number, dy: number) => void;
   onVertici?: (riga: number, punti: Pt[]) => void; onDisegna?: (cosa: Strumento, punti: Pt[]) => void;
-  onRuota?: (riga: number, gradi: number) => void; onBozza?: (attiva: boolean) => void;
+  onRuota?: (riga: number, gradi: number) => void; onBozza?: (attiva: boolean) => void; onTraccia?: (punti: Pt[] | null) => void;
   onNota?: (id: string) => void; onFoto?: (fid: string, campi: Partial<Foto>) => void;
 };
 type Vista = { cx: number; cy: number; k: number };
@@ -73,6 +73,11 @@ export default function Pianta(p: Props) {
   useEffect(() => { setPts([]); setDig(""); }, [strumento, piano]);
   const { onBozza } = p;
   useEffect(() => { onBozza?.(pts.length > 0); }, [pts.length, onBozza]);
+  const fineMuro = strumento === "muro" && pts.length && cur && !dig ? cur.p : null;   // il muro in corso arriva fino al cursore
+  useEffect(() => {
+    p.onTraccia?.(strumento === "muro" && pts.length ? (fineMuro ? [...pts, fineMuro] : pts) : null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pts, fineMuro?.x, fineMuro?.y, strumento, p.onTraccia, p.muro?.a, p.muro?.b, p.muro?.spessore]);
 
   const vista = v ?? { cx: 500, cy: 400, k: 0.8 };
   const vb = { x: vista.cx - dim.w / 2 / vista.k, y: vista.cy - dim.h / 2 / vista.k, w: dim.w / vista.k, h: dim.h / vista.k };
@@ -167,7 +172,7 @@ export default function Pianta(p: Props) {
       return;
     }
     const s = aggancia(q, e.altKey, strumento === "muro" ? pts[pts.length - 1] : undefined).p;
-    if (strumento === "stanza" || (strumento === "appunto" && p.modoAppunto !== "punto")) { g.current = { ...base, tipo: "rettangolo" }; setPts([s, s]); return; }
+    if (strumento === "stanza" || strumento === "foro" || (strumento === "appunto" && p.modoAppunto !== "punto")) { g.current = { ...base, tipo: "rettangolo" }; setPts([s, s]); return; }
     g.current = { ...base, tipo: "clic" };
   }
 
@@ -348,7 +353,7 @@ export default function Pianta(p: Props) {
         })()}
         {pts.length > 0 && strumento !== "muro" && (strumento === "misura" || strumento === "calibra" || p.modoAppunto === "linea" ? <polyline points={poly([pts[0], pts[1] ?? cur?.p ?? pts[0]])} className="bozza" />
           : pts[1] && <rect x={Math.min(pts[0].x, pts[1].x)} y={Math.min(pts[0].y, pts[1].y)} width={Math.abs(pts[1].x - pts[0].x)} height={Math.abs(pts[1].y - pts[0].y)} className="bozza" />)}
-        {pts.length > 0 && pts[1] && strumento === "stanza" && etichettaPx((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2, `${Math.abs(pts[1].x - pts[0].x)} × ${Math.abs(pts[1].y - pts[0].y)}`)}
+        {pts.length > 0 && pts[1] && (strumento === "stanza" || strumento === "foro") && etichettaPx((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2, `${Math.abs(pts[1].x - pts[0].x)} × ${Math.abs(pts[1].y - pts[0].y)}`)}
         {disegnando && cur && <g pointerEvents="none">
           {cur.gx && <line x1={cur.gx.x} y1={cur.gx.y} x2={cur.p.x} y2={cur.p.y} className="guida" />}
           {cur.gy && <line x1={cur.gy.x} y1={cur.gy.y} x2={cur.p.x} y2={cur.p.y} className="guida" />}
@@ -357,7 +362,10 @@ export default function Pianta(p: Props) {
               : <circle cx={cur.p.x} cy={cur.p.y} r={px(4)} style={{ fill: "var(--accent)" }} />}
         </g>}
         {disegnando && ultimoP && (strumento === "muro" || strumento === "misura" || strumento === "calibra") && (dig || cur) &&
-          etichettaPx((cur?.p ?? ultimoP).x + px(dig ? 0 : 34), (cur?.p ?? ultimoP).y - px(dig ? 26 : 16), dig ? `${dig}▍ cm` : `${Math.round(Math.hypot(cur!.p.x - ultimoP.x, cur!.p.y - ultimoP.y))} cm`, dig ? "var(--claude)" : "var(--accent)")}
+          etichettaPx((cur?.p ?? ultimoP).x + px(dig ? 0 : 34), (cur?.p ?? ultimoP).y - px(dig ? 26 : 16), dig ? `${dig}▍ cm` : (() => {
+            const dx = cur!.p.x - ultimoP.x, dy = cur!.p.y - ultimoP.y, gr = Math.round(((Math.atan2(-dy, dx) * 180) / Math.PI + 360) % 360);   // storto: anche l'angolo
+            return `${Math.round(Math.hypot(dx, dy))} cm` + (gr % 90 && Math.hypot(dx, dy) > 1 ? ` · ${gr}°` : "");
+          })(), dig ? "var(--claude)" : "var(--accent)")}
       </svg>
       <div className="pianta-zoom vetro" role="group" aria-label="Zoom">
         <button type="button" aria-label="Avvicina" onClick={() => zoom(1.3)}>+</button>

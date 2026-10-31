@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import Elimina from "@/components/Elimina";
 import Importa from "@/components/Importa";
-import { crea, elenco } from "@/lib/progetti";
+import { crea, elenco, elimina } from "@/lib/progetti";
 
 export const metadata = { title: "Progetti · Abita" };
 export const dynamic = "force-dynamic";
@@ -11,6 +13,12 @@ async function nuovo(f: FormData) {
   const nome = String(f.get("nome") ?? ""), cliente = String(f.get("cliente") ?? "");
   const p = await crea(nome, cliente, f.get("esempio") ? undefined : `progetto "${nome.replace(/"/g, "'")}"\ncliente "${cliente.replace(/"/g, "'")}"\n\npiano Terra altezza 270\n`);
   redirect(`/studio/${p.id}`);
+}
+
+async function via(f: FormData) {
+  "use server";
+  await elimina(String(f.get("id") ?? ""));
+  revalidatePath("/studio");
 }
 
 const data = (t: number) => new Date(t).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -48,6 +56,8 @@ export default async function Studio() {
             <div style={{ display: "flex", gap: 8 }}>
               <Link className="btn piccolo" href={`/studio/${p.id}`}>Apri</Link>
               {p.versione && <a className="btn piccolo" href={`/v/${p.share}`} target="_blank" rel="noreferrer">Vista cliente</a>}
+              <span style={{ flex: 1 }} />
+              <Elimina id={p.id} nome={p.nome} azione={via} />
             </div>
           </section>
         ))}

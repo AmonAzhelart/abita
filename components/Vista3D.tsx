@@ -1,10 +1,11 @@
 "use client";
 // La casa in 3D: un dito ruota, due dita zoom e spostano. Le etichette delle stanze seguono la scena.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import type { Modello } from "@/lib/lingua";
-import { costruisci, type Mesh, type Scena } from "@/lib/scena";
+import type { Modello, Pt } from "@/lib/lingua";
+import { contorno } from "@/lib/pianta";
+import { costruisci, lastra, muroInCorso, type Mesh, type Scena } from "@/lib/scena";
 
 /** Scarica le mesh dei modelli importati (una volta per insieme di nomi) e le decodifica. */
 export function useMesh(url: string, nomi: string) {
@@ -24,9 +25,11 @@ export function useMesh(url: string, nomi: string) {
 const lontano = (cam: THREE.PerspectiveCamera) => Math.max(1, 1 / (cam.aspect || 1)) ** 0.85;   // schermi stretti: più indietro
 
 export type Volo = { tipo: "panoramica" | "alto" | "entra" | "stanza"; riga?: number; n: number };
-type Props = { modello: Modello; piano: string; tetto: boolean; nomi: boolean; volo: Volo; mesh?: Record<string, Mesh>; onStanza?: (riga: number) => void };
+/** Il muro che si sta tirando in pianta: la pianta lo passa qui a ogni movimento, senza far ridisegnare l'editor. */
+export type Traccia = { pts: Pt[]; spessore: number; a: number; b: number; quota: number };
+type Props = { modello: Modello; piano: string; tetto: boolean; nomi: boolean; volo: Volo; mesh?: Record<string, Mesh>; onStanza?: (riga: number) => void; traccia?: RefObject<((t: Traccia | null) => void) | null>; sel?: number | null };
 
-export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onStanza }: Props) {
+export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onStanza, traccia, sel }: Props) {
   const box = useRef<HTMLDivElement>(null), tags = useRef<HTMLDivElement>(null);
   const S = useRef<{ r: THREE.WebGLRenderer; scene: THREE.Scene; cam: THREE.PerspectiveCamera; ctl: OrbitControls; sc?: Scena; ground: THREE.Mesh; needs: boolean; anim?: { t0: number; p0: THREE.Vector3; t0v: THREE.Vector3; p1: THREE.Vector3; t1: THREE.Vector3 } } | null>(null);
   const prop = useRef({ piano, tetto, nomi, onStanza });
@@ -139,6 +142,59 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
     s.sc.tetti.visible = tetto && piano === "tutti";
     s.needs = true;
   }, [piano, tetto, nomi, modello]);
+
+  // il muro in corso, trasparente nel colore dell'editor; sparisce quando lo finisci (e arriva quello vero)
+  useEffect(() => {
+    if (!traccia) return;
+    const col = new THREE.Color(getComputedStyle(box.current!).getPropertyValue("--accent").trim() || "#2557A7");
+    const pieno = new THREE.MeshLambertMaterial({ color: col, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide });
+    const filo = new THREE.LineBasicMaterial({ color: col });
+    const grp = new THREE.Group();
+    S.current?.scene.add(grp);
+    const svuota = () => { for (const o of grp.children) (o as THREE.Mesh).geometry.dispose(); grp.clear(); };
+    traccia.current = t => {
+      svuota();
+      if (t && t.pts.length > 1) {
+        const g = muroInCorso(t.pts, t.quota, t.spessore, t.a, t.b), m = new THREE.Mesh(g, pieno);
+        m.renderOrder = 3;
+        grp.add(m, new THREE.LineSegments(new THREE.EdgesGeometry(g, 20), filo));
+      }
+      if (S.current) S.current.needs = true;
+    };
+    return () => { traccia.current = null; svuota(); grp.removeFromParent(); pieno.dispose(); filo.dispose(); };
+  }, [traccia]);
+
+  // l'elemento scelto in pianta: un contorno che si vede anche attraverso i muri
+  useEffect(() => {
+    const s = S.current, e = sel == null ? undefined : modello.el.find(x => x.riga === sel), P = e && modello.piani.find(p => p.id === e.piano);
+    if (!s || !e || !P) return;
+    const geo: THREE.BufferGeometry[] = [];
+    if (e.tipo === "muro") geo.push(muroInCorso(e.chiuso ? [...e.punti, e.punti[0]] : e.punti, P.quota - 1, e.spessore + 3, e.altezza + 2, e.fino + 2));
+    else if (e.tipo !== "tetto") for (const poly of contorno(modello, e.riga)) {
+      const [su, alto] = e.tipo === "arredo" ? [e.quota + e.H + 1, e.H + 2] : e.tipo === "apertura" ? [e.davanzale + e.alta, e.alta] : [6, 8];
+      geo.push(lastra(poly, P.quota + su, alto));
+    }
+    if (!geo.length) return;
+    const col = new THREE.Color(getComputedStyle(box.current!).getPropertyValue("--accent").trim() || "#2557A7");
+    const velo = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide });
+    const filo = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.95, depthTest: false });
+    const grp = new THREE.Group();
+    for (const g of geo) {
+      const m = new THREE.Mesh(g, velo), l = new THREE.LineSegments(new THREE.EdgesGeometry(g, 20), filo);
+      m.renderOrder = 4;
+      l.renderOrder = 10;
+      grp.add(m, l);
+    }
+    s.scene.add(grp);
+    s.needs = true;
+    return () => {
+      grp.removeFromParent();
+      grp.traverse(o => (o as THREE.Mesh).geometry?.dispose());
+      velo.dispose();
+      filo.dispose();
+      if (S.current) S.current.needs = true;
+    };
+  }, [sel, modello]);
 
   useEffect(() => {
     const s = S.current;

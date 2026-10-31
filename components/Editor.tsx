@@ -2,15 +2,15 @@
 // L'editor: testo a sinistra, pianta o 3D al centro, appunti e attività di Claude a destra.
 // Ogni modifica (scritta o disegnata) cambia il testo; il testo si salva da solo e Claude lo vede subito.
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { aggiungi, distSeg, imposta, impostaPunti, leggi, segmenti, sposta, togli, type Modello, type Pt } from "@/lib/lingua";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as TastoReact, type PointerEvent as Puntatore } from "react";
+import { aggiungi, angoli, dentro, distSeg, imposta, impostaPunti, leggi, segmenti, sposta, togli, type Arredo, type Modello, type Pt, type Stanza } from "@/lib/lingua";
 import { passaggi } from "@/lib/passaggi";
 import type { Appunto, Foto, Progetto } from "@/lib/progetti";
 import Catalogo from "./Catalogo";
 import Codice from "./Codice";
 import Pianta, { type Strumento } from "./Pianta";
-import Proprieta, { Profilo } from "./Proprieta";
-import Vista3D, { useMesh, type Volo } from "./Vista3D";
+import Proprieta, { pianoSopra, Profilo, titolo } from "./Proprieta";
+import Vista3D, { useMesh, type Traccia, type Volo } from "./Vista3D";
 
 type Rpc = { ok: true; doc: Progetto } | { ok: false; stato: number; errore: string };
 async function rpc(azione: string, dati: object): Promise<Rpc> {
@@ -39,6 +39,20 @@ function suMuro(M: Modello, piano: string, q: Pt) {
   }
   return best;
 }
+/** Un buco nel pavimento apre il solaio solo se sta dentro una stanza: lo stringo alla stanza che ne contiene il centro. */
+function foroIn(M: Modello, piano: string, a: Pt, b: Pt) {
+  let x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y), x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+  const c = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+  const st = M.el.find((e): e is Stanza => e.tipo === "stanza" && e.piano === piano && dentro(c, e.punti));
+  if (st) {
+    const xs = st.punti.map(q => q.x), ys = st.punti.map(q => q.y);
+    x0 = Math.max(x0, Math.min(...xs) + 2); y0 = Math.max(y0, Math.min(...ys) + 2);
+    x1 = Math.min(x1, Math.max(...xs) - 2); y1 = Math.min(y1, Math.max(...ys) - 2);
+  }
+  const ok = !st || [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].every(([x, y]) => dentro({ x, y }, st.punti));
+  return { riga: `foro ${fmt(x0)},${fmt(y0)} ${fmt(x1)},${fmt(y1)}`, ok, stanza: st?.nome };
+}
+
 const quanto = (t: number) => {
   const m = Math.round((Date.now() - t) / 60000);
   return m < 1 ? "adesso" : m < 60 ? `${m} min fa` : m < 1440 ? `${Math.round(m / 60)} h fa` : new Date(t).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
@@ -49,14 +63,15 @@ const COL_NOTA = (a: Appunto) => (a.stato === "fatta" ? "var(--fatta)" : a.da ==
 const I = {
   sposta: "M5 3l14 8-6 2-2 6z", muro: "M3 8h18v8H3z M9 8v8 M15 8v8", stanza: "M4 4h16v16H4z M4 12h7", porta: "M5 21V4h9v17 M14 4a10 10 0 0 1 5 9",
   finestra: "M4 5h16v14H4z M12 5v14 M4 12h16", arredo: "M4 11V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3 M3 11h18v6H3z M5 17v2 M19 17v2", misura: "M3 17L17 3l4 4L7 21z M7 13l2 2 M10 10l2 2 M13 7l2 2",
-  appunto: "M4 4h16v12H8l-4 4z", foto: "M4 6h16v12H4z M8 14l3-3 3 3 2-2 4 4",
+  appunto: "M4 4h16v12H8l-4 4z", foro: "M3 3h18v18H3z M8 8h2.5 M13.5 8H16v2.5 M16 13.5V16h-2.5 M10.5 16H8v-2.5 M8 10.5V8", foto: "M4 6h16v12H4z M8 14l3-3 3 3 2-2 4 4",
 };
 const Ico = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
-const ATTREZZI: [Strumento, string, string][] = [["sposta", "Sposta", "V"], ["muro", "Muro", "M"], ["stanza", "Stanza", "S"], ["porta", "Porta", "P"], ["finestra", "Finestra", "F"], ["arredo", "Arredo", "A"], ["misura", "Misura", "Q"], ["appunto", "Appunto", "N"]];
+const ATTREZZI: [Strumento, string, string][] = [["sposta", "Sposta", "V"], ["muro", "Muro", "M"], ["stanza", "Stanza", "S"], ["foro", "Buco", "B"], ["porta", "Porta", "P"], ["finestra", "Finestra", "F"], ["arredo", "Arredo", "A"], ["misura", "Misura", "Q"], ["appunto", "Appunto", "N"]];
 const AIUTO: Partial<Record<Strumento, string>> = {
   sposta: "Clic per scegliere, trascina per spostare. Canc elimina, R ruota",
   muro: "Clic per ogni angolo · scrivi una misura e Invio per un tratto esatto · doppio clic per finire",
   stanza: "Trascina da un angolo all'altro (misure interne)",
+  foro: "Trascina un rettangolo: lì il pavimento si apre, per la scala che sale da sotto",
   porta: "Clic sopra un muro", finestra: "Clic sopra un muro", arredo: "Clic dove va il centro",
   misura: "Clic sul primo punto e sul secondo", calibra: "Clic su due punti della foto di cui sai la distanza vera",
   foto: "Trascina la foto per metterla al suo posto",
@@ -69,7 +84,8 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const M = useMemo(() => leggi(testo, p.modelli), [testo, p.modelli]);
   const mesh = useMesh(`/api/studio?id=${iniziale.id}&modelli=1`, Object.values(p.modelli ?? {}).map(m => m.chiave).join());
   const [piano, setPiano] = useState(M.piani[0]?.id ?? "terra");
-  const [vista, setVista] = useState<"pianta" | "3d">("pianta");
+  const [vista, setVista] = useState<"pianta" | "divisa" | "3d">("pianta");
+  const [parte, setParte] = useState(0.5);                                   // vista divisa: quanto spazio ha la pianta
   const [strumento, setStrumento] = useState<Strumento>("sposta");
   const [cosa, setCosa] = useState("divano");
   const [modoAppunto, setModoAppunto] = useState<"punto" | "linea" | "zona">("punto");
@@ -83,7 +99,9 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const [notaSel, setNotaSel] = useState<string | null>(null);
   const [bozza, setBozza] = useState<{ tipo: "appunto"; a: Pt; b?: Pt; forma: "punto" | "linea" | "zona" } | { tipo: "calibra"; a: Pt; b: Pt } | { tipo: "pubblica" } | null>(null);
   const [scritto, setScritto] = useState("");
-  const [avviso, setAvviso] = useState<{ t: string; claude?: boolean } | null>(null);
+  const [avviso, setAvviso] = useState<{ t: string; claude?: boolean; azione?: [string, () => void] } | null>(null);
+  const [scorciatoie, setScorciatoie] = useState(false);
+  const copiato = useRef<string | null>(null);                               // Ctrl+C / Ctrl+V di un elemento
   const [stato, setStato] = useState<"salvato" | "salvo" | "errore">("salvato");
   const [fotoAttiva, setFotoAttiva] = useState<string | null>(null);
   const [centra, setCentra] = useState<{ p: Pt; n: number }>();
@@ -94,10 +112,12 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const [catalogo, setCatalogo] = useState(false);
   const [opzMuro, setOpzMuro] = useState({ spessore: 20, a: "", b: "" });   // a, b vuote = altezza del piano
   const [inCorso, setInCorso] = useState(false);                             // un muro a metà: Esc e Backspace sono suoi
+  const traccia = useRef<((t: Traccia | null) => void) | null>(null);        // la pianta passa al 3D il muro in corso
+  const centro = useRef<HTMLElement>(null);
 
   const R = useRef({ testo, rev: iniziale.rev, sporco: false, inVolo: false, timer: 0 as unknown as ReturnType<typeof setTimeout>, visto: Math.max(0, ...iniziale.attivita.map(a => a.quando)), passato: [] as string[], futuro: [] as string[], ultimoPush: 0 });
 
-  const mostra = useCallback((t: string, claude = false) => { setAvviso({ t, claude }); setTimeout(() => setAvviso(a => (a?.t === t ? null : a)), claude ? 6000 : 3500); }, []);
+  const mostra = useCallback((t: string, claude = false, azione?: [string, () => void]) => { setAvviso({ t, claude, azione }); setTimeout(() => setAvviso(a => (a?.t === t ? null : a)), claude || azione ? 6000 : 3500); }, []);
 
   const invia = useCallback(async () => {
     const r = R.current;
@@ -169,8 +189,24 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const elSel = sel != null ? M.el.find(e => e.riga === sel) : undefined;
   const nuovaRiga = (riga: string) => { const r = aggiungi(R.current.testo, M, piano, riga); cambia(r.testo); setSel(r.riga); setVai({ riga: r.riga, n: Date.now() }); };
 
-  const hPiano = M.piani.find(x => x.id === piano)?.altezza ?? 270;
+  const hPiano = M.piani.find(x => x.id === piano)?.altezza ?? 270, qPiano = M.piani.find(x => x.id === piano)?.quota ?? 0;
   const hA = parseFloat(opzMuro.a) > 0 ? parseFloat(opzMuro.a) : hPiano, hB = parseFloat(opzMuro.b) > 0 ? parseFloat(opzMuro.b) : hA;
+
+  const elimina = (riga: number) => {
+    const e = M.el.find(x => x.riga === riga);
+    cambia(togli(R.current.testo, riga));
+    setSel(null);
+    mostra(`Eliminato: ${e ? titolo(e) : "elemento"}`, false, ["Annulla", annulla]);
+  };
+  const duplica = (riga: number) => nuovaRiga(sposta(M.righe[riga].trim(), 0, 30, 30));
+  const incolla = () => { if (!copiato.current) return; const r = sposta(copiato.current, 0, 30, 30); copiato.current = r; nuovaRiga(r); };
+  const bucoScala = (a: Arredo) => {
+    const su = pianoSopra(M, a.piano);
+    if (!su) return;
+    const q = angoli(a), f = foroIn(M, su.id, { x: Math.min(...q.map(v => v.x)), y: Math.min(...q.map(v => v.y)) }, { x: Math.max(...q.map(v => v.x)), y: Math.max(...q.map(v => v.y)) });
+    cambia(aggiungi(R.current.testo, M, su.id, f.riga).testo);
+    mostra(f.ok ? `Buco aperto nel pavimento del piano ${su.nome}` : `Buco aperto al piano ${su.nome}, ma esce dalla stanza ${f.stanza}: stringilo`, false, ["Guarda", () => setPiano(su.id)]);
+  };
 
   function disegnato(c: Strumento, pts: Pt[]) {
     const [a, b] = pts;
@@ -184,6 +220,12 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       case "stanza": {
         const n = M.el.filter(e => e.tipo === "stanza").length + 1;
         nuovaRiga(`stanza "Stanza ${n}" ${fmt(Math.min(a.x, b.x))},${fmt(Math.min(a.y, b.y))} ${fmt(Math.max(a.x, b.x))},${fmt(Math.max(a.y, b.y))} pavimento gres`);
+        return;
+      }
+      case "foro": {
+        const f = foroIn(M, piano, a, b);
+        nuovaRiga(f.riga);
+        if (!f.ok) mostra(`Il buco esce dalla stanza ${f.stanza}: stringilo, se no il pavimento non si apre`);
         return;
       }
       case "porta": case "finestra": {
@@ -225,13 +267,26 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       const dentroCampo = (e.target as HTMLElement | null)?.closest?.("input, textarea, select");
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !dentroCampo) { e.preventDefault(); if (e.shiftKey) rifai(); else annulla(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y" && !dentroCampo) { e.preventDefault(); rifai(); return; }
+      if ((e.ctrlKey || e.metaKey) && !dentroCampo && !e.shiftKey && !e.altKey) {
+        const t = e.key.toLowerCase();
+        if (t === "d" && sel != null) { e.preventDefault(); duplica(sel); return; }
+        if (t === "c" && sel != null && !getSelection()?.toString()) { copiato.current = M.righe[sel].trim(); navigator.clipboard?.writeText(copiato.current).catch(() => {}); mostra("Copiato: Ctrl+V per incollarlo su questo piano"); return; }
+        if (t === "v" && copiato.current) { e.preventDefault(); incolla(); return; }
+      }
       if (dentroCampo || e.ctrlKey || e.metaKey || e.altKey) return;
       if (inCorso) return;                                   // la pianta sta disegnando: i tasti li gestisce lei
-      if (e.key === "Escape") { setStrumento("sposta"); setSel(null); setBozza(null); setCatalogo(false); return; }
-      if ((e.key === "Delete" || e.key === "Backspace") && sel != null && strumento === "sposta") { e.preventDefault(); cambia(togli(R.current.testo, sel)); setSel(null); return; }
+      if (e.key === "?") { setScorciatoie(x => !x); return; }
+      if (e.key === "Escape") { if (scorciatoie) { setScorciatoie(false); return; } setStrumento("sposta"); setSel(null); setBozza(null); setCatalogo(false); return; }
+      if ((e.key === "Delete" || e.key === "Backspace") && sel != null && strumento === "sposta") { e.preventDefault(); elimina(sel); return; }
+      if (e.key.startsWith("Arrow") && sel != null && strumento === "sposta" && vista !== "3d") {    // frecce: 1 cm, con Maiusc 10 cm
+        e.preventDefault();
+        const d = e.shiftKey ? 10 : 1;
+        cambia(sposta(R.current.testo, sel, e.key === "ArrowLeft" ? -d : e.key === "ArrowRight" ? d : 0, e.key === "ArrowUp" ? -d : e.key === "ArrowDown" ? d : 0), true);
+        return;
+      }
       if (e.key.toLowerCase() === "r" && elSel?.tipo === "arredo") { cambia(imposta(R.current.testo, elSel.riga, "ruota", String((elSel.ruota + 90) % 360))); return; }
       const a = ATTREZZI.find(x => x[2].toLowerCase() === e.key.toLowerCase());
-      if (a && vista === "pianta") { setStrumento(a[0]); setCatalogo(a[0] === "arredo"); }
+      if (a && vista !== "3d") { setStrumento(a[0]); setCatalogo(a[0] === "arredo"); }
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
@@ -256,10 +311,56 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   }
   const cambiaFoto = async (fid: string, c: Partial<Foto>) => { const r = await rpc("cambiaFoto", { id, fid, ...c }); if (r.ok) applica(r.doc); else mostra(r.errore); };
   const cambiaNota = async (aid: string, c: object) => { const r = await rpc("cambiaAppunto", { id, aid, ...c }); if (r.ok) applica(r.doc); else mostra(r.errore); };
-  const vaiNota = (a: Appunto) => { setNotaSel(a.id); if (a.piano !== piano) setPiano(a.piano); setVista("pianta"); setCentra({ p: a.a, n: Date.now() }); };
+  const vaiNota = (a: Appunto) => { setNotaSel(a.id); if (a.piano !== piano) setPiano(a.piano); versoPianta(); setCentra({ p: a.a, n: Date.now() }); };
+
+  // vista divisa: si ricorda tra una visita e l'altra (solo su questo browser)
+  const ricorda = (k: string, v: string) => { try { localStorage.setItem("abita:" + k, v); } catch {} };
+  useEffect(() => {
+    try {
+      const k = parseFloat(localStorage.getItem("abita:parte") ?? "");
+      if (k >= 0.25 && k <= 0.75) setParte(k);
+      if (localStorage.getItem("abita:vista") === "divisa" && matchMedia("(min-width: 721px)").matches) { setVista("divisa"); setTimeout(() => setAdatta(n => n + 1), 120); }
+    } catch {}
+  }, []);
+  const scegliVista = (v: typeof vista) => {
+    setVista(v);
+    ricorda("vista", v);
+    if (v !== "3d" && piano === "tutti") setPiano(M.piani[0]?.id ?? "terra");
+    if (v !== "3d") setTimeout(() => setAdatta(n => n + 1), 60);              // dopo che la pianta ha preso la sua nuova misura
+  };
+  const versoPianta = () => setVista(v => (v === "3d" ? "pianta" : v));
+  const trascinaDivisore = (e: Puntatore<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    const muovi = (ev: PointerEvent) => {
+      const r = centro.current!.getBoundingClientRect(), alto = r.height > r.width;
+      setParte(Math.min(0.75, Math.max(0.25, alto ? (ev.clientY - r.top) / r.height : (ev.clientX - r.left) / r.width)));
+    };
+    const fine = () => { el.removeEventListener("pointermove", muovi); el.removeEventListener("pointerup", fine); el.removeEventListener("pointercancel", fine); setParte(k => (ricorda("parte", String(k)), k)); };
+    el.addEventListener("pointermove", muovi);
+    el.addEventListener("pointerup", fine);
+    el.addEventListener("pointercancel", fine);
+  };
+  const tastoDivisore = (e: TastoReact<HTMLDivElement>) => {
+    const d = { ArrowLeft: -0.05, ArrowUp: -0.05, ArrowRight: 0.05, ArrowDown: 0.05, Home: -1, End: 1 }[e.key];
+    if (d === undefined) return;
+    e.preventDefault();
+    setParte(k => { const n = Math.min(0.75, Math.max(0.25, k + d)); ricorda("parte", String(n)); return n; });
+  };
 
   useEffect(() => { if (sx === "versioni") rpc("storia", { id }).then(r => r.ok && setStoria(r.doc as unknown as typeof storia)); }, [sx, id, p.rev]);
   useEffect(() => { if (piano !== "tutti" && !M.piani.some(x => x.id === piano) && M.piani[0]) setPiano(M.piani[0].id); }, [M, piano]);
+
+  const comandiPianta = <div className="vetro" style={{ display: "flex", gap: 4 }}>
+    <button className="btn piccolo" aria-pressed={quote} onClick={() => setQuote(!quote)}>Quote</button>
+    <button className="btn piccolo" aria-pressed={vediPassaggi} onClick={() => setVediPassaggi(!vediPassaggi)}>Passaggi{es ? (es.problemi.length ? ` (${es.problemi.length})` : ", ok") : ""}</button>
+    <button className="btn piccolo" onClick={() => setAdatta(n => n + 1)}>Adatta</button>
+  </div>;
+  const comandi3D = <div className="vetro" style={{ display: "flex", gap: 4 }}>
+    <button className="btn piccolo" onClick={() => setVolo({ tipo: "panoramica", n: Date.now() })}>Panoramica</button>
+    <button className="btn piccolo" onClick={() => setVolo({ tipo: "alto", n: Date.now() })}>Dall&apos;alto</button>
+    {vista === "3d" && <button className="btn piccolo" aria-pressed={tetto} onClick={() => setTetto(!tetto)}>Tetto</button>}
+  </div>;
 
   return (
     <div className="ed">
@@ -275,6 +376,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
         <div className="storia-btn nascondi-mobile" role="group" aria-label="Cronologia">
           <button className="btn piccolo" onClick={annulla} disabled={!R.current.passato.length} title="Annulla (Ctrl+Z)" aria-label="Annulla">↶</button>
           <button className="btn piccolo" onClick={rifai} disabled={!R.current.futuro.length} title="Rifai (Ctrl+Shift+Z)" aria-label="Rifai">↷</button>
+          <button className="btn piccolo" onClick={() => setScorciatoie(x => !x)} aria-pressed={scorciatoie} title="Scorciatoie da tastiera (?)" aria-label="Scorciatoie da tastiera">?</button>
         </div>
         <span className="tenue piccolo nascondi-mobile" aria-live="polite">{stato === "salvo" ? "Salvo…" : stato === "errore" ? "Non salvato" : "Salvato"}</span>
         {M.errori.length > 0 && <button className="btn piccolo pericolo" onClick={() => { setSx("codice"); setAperto("sx"); setVai({ riga: M.errori[0].riga, n: Date.now() }); }}>{M.errori.length} {M.errori.length === 1 ? "errore" : "errori"}</button>}
@@ -319,8 +421,8 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <button className="btn piccolo" onClick={() => { setFotoAttiva(f.id); setPiano(f.piano); setVista("pianta"); setStrumento("calibra"); }}>Metti in scala</button>
-                <button className="btn piccolo" aria-pressed={strumento === "foto" && fotoAttiva === f.id} onClick={() => { setFotoAttiva(f.id); setPiano(f.piano); setVista("pianta"); setStrumento("foto"); }}>Sposta</button>
+                <button className="btn piccolo" onClick={() => { setFotoAttiva(f.id); setPiano(f.piano); versoPianta(); setStrumento("calibra"); }}>Metti in scala</button>
+                <button className="btn piccolo" aria-pressed={strumento === "foto" && fotoAttiva === f.id} onClick={() => { setFotoAttiva(f.id); setPiano(f.piano); versoPianta(); setStrumento("foto"); }}>Sposta</button>
                 <button className="btn piccolo" onClick={() => cambiaFoto(f.id, { visibile: !f.visibile })}>{f.visibile ? "Nascondi" : "Mostra"}</button>
                 <button className="btn piccolo pericolo" onClick={async () => { if (confirm(`Eliminare la foto ${f.nome}?`)) { const r = await rpc("togliFoto", { id, fid: f.id }); if (r.ok) applica(r.doc); } }}>Elimina</button>
               </div>
@@ -338,39 +440,16 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
         </div>}
       </aside>
 
-      <main className="ed-centro">
-        {vista === "pianta"
-          ? <Pianta modello={M} piano={piano} quote={quote} passaggi={es} modifica strumento={strumento} modoAppunto={modoAppunto} sel={sel} evid={evid}
-              appunti={appunti} notaSel={notaSel} foto={p.foto} fotoAttiva={fotoAttiva} centra={centra} adatta={adatta}
-              onSel={scegli} onSposta={(r, x, y) => cambia(sposta(R.current.testo, r, x, y))}
-              onVertici={(r, pts) => cambia(impostaPunti(R.current.testo, r, pts))} onDisegna={disegnato}
-              muro={{ spessore: opzMuro.spessore, a: hA, b: hB }} onBozza={setInCorso}
-              onRuota={(r, gr) => cambia(imposta(R.current.testo, r, "ruota", gr ? String(gr) : null))}
-              onNota={nid => { setNotaSel(nid); setDx("appunti"); }} onFoto={cambiaFoto} />
-          : <Vista3D modello={M} mesh={mesh} piano={piano} tetto={tetto} nomi volo={volo} onStanza={r => setVolo({ tipo: "stanza", riga: r, n: Date.now() })} />}
-        <div className="galleggia alto">
-          <div className="segmenti vetro" role="group" aria-label="Piano">
-            {M.piani.map(x => <button key={x.id} aria-pressed={piano === x.id} onClick={() => setPiano(x.id)}>{x.nome}</button>)}
-            {vista === "3d" && <button aria-pressed={piano === "tutti"} onClick={() => setPiano("tutti")}>Tutta</button>}
-          </div>
-          <span className="spazio" />
-          <div className="vetro" style={{ display: "flex", gap: 4 }}>
-            {vista === "pianta" ? <>
-              <button className="btn piccolo" aria-pressed={quote} onClick={() => setQuote(!quote)}>Quote</button>
-              <button className="btn piccolo" aria-pressed={vediPassaggi} onClick={() => setVediPassaggi(!vediPassaggi)}>Passaggi{es ? (es.problemi.length ? ` (${es.problemi.length})` : ", ok") : ""}</button>
-              <button className="btn piccolo" onClick={() => setAdatta(n => n + 1)}>Adatta</button>
-            </> : <>
-              <button className="btn piccolo" onClick={() => setVolo({ tipo: "panoramica", n: Date.now() })}>Panoramica</button>
-              <button className="btn piccolo" onClick={() => setVolo({ tipo: "alto", n: Date.now() })}>Dall&apos;alto</button>
-              <button className="btn piccolo" aria-pressed={tetto} onClick={() => setTetto(!tetto)}>Tetto</button>
-            </>}
-          </div>
-          <div className="segmenti vetro" role="group" aria-label="Vista">
-            <button aria-pressed={vista === "pianta"} onClick={() => { setVista("pianta"); if (piano === "tutti") setPiano(M.piani[0]?.id ?? "terra"); }}>Pianta</button>
-            <button aria-pressed={vista === "3d"} onClick={() => setVista("3d")}>3D</button>
-          </div>
-        </div>
-        {vista === "pianta" && <>
+      <main ref={centro} className={"ed-centro" + (vista === "divisa" ? " divisa" : "")} style={{ "--parte": `${parte * 100}%` } as CSSProperties}>
+        {vista !== "3d" && <section className="lato lato-pianta" aria-label="Pianta">
+          <Pianta modello={M} piano={piano} quote={quote} passaggi={es} modifica strumento={strumento} modoAppunto={modoAppunto} sel={sel} evid={evid}
+            appunti={appunti} notaSel={notaSel} foto={p.foto} fotoAttiva={fotoAttiva} centra={centra} adatta={adatta}
+            onSel={scegli} onSposta={(r, x, y) => cambia(sposta(R.current.testo, r, x, y))}
+            onVertici={(r, pts) => cambia(impostaPunti(R.current.testo, r, pts))} onDisegna={disegnato}
+            muro={{ spessore: opzMuro.spessore, a: hA, b: hB }} onBozza={setInCorso}
+            onRuota={(r, gr) => cambia(imposta(R.current.testo, r, "ruota", gr ? String(gr) : null))}
+            onTraccia={c => traccia.current?.(c && { pts: c, spessore: opzMuro.spessore, a: hA, b: hB, quota: qPiano })}
+            onNota={nid => { setNotaSel(nid); setDx("appunti"); }} onFoto={cambiaFoto} />
           {strumento === "appunto" && <div className="galleggia" style={{ bottom: 80, left: "50%", transform: "translateX(-50%)" }}>
             <div className="segmenti vetro">{(["punto", "linea", "zona"] as const).map(m => <button key={m} aria-pressed={modoAppunto === m} onClick={() => setModoAppunto(m)}>{m[0].toUpperCase() + m.slice(1)}</button>)}</div>
           </div>}
@@ -399,11 +478,33 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
             {ATTREZZI.map(([k, nome, tasto]) => (
               <button key={k} className={k === "appunto" ? "appunto" : undefined} aria-pressed={strumento === k} title={`${nome} (${tasto})`}
                 onClick={() => { setStrumento(k); setCatalogo(k === "arredo" ? !(catalogo && strumento === "arredo") : false); }}>
-                <Ico d={I[k as keyof typeof I]} />{nome}
+                <Ico d={I[k as keyof typeof I]} /><span>{nome}</span>
               </button>
             ))}
           </nav>
-        </>}
+        </section>}
+        {vista === "divisa" && <div className="divisore" role="separator" tabIndex={0} aria-label="Sposta la divisione tra pianta e 3D" title="Trascina per dare più spazio alla pianta o al 3D (doppio clic: a metà)"
+          aria-valuemin={25} aria-valuemax={75} aria-valuenow={Math.round(parte * 100)} onPointerDown={trascinaDivisore} onKeyDown={tastoDivisore}
+          onDoubleClick={() => { setParte(0.5); ricorda("parte", "0.5"); }} />}
+        {vista !== "pianta" && <section className="lato lato-3d" aria-label="Vista 3D">
+          <Vista3D modello={M} mesh={mesh} piano={piano} tetto={tetto} nomi volo={volo} onStanza={r => { setVolo({ tipo: "stanza", riga: r, n: Date.now() }); scegli(r); }} traccia={traccia} sel={sel} />
+          {vista === "divisa" && <div className="galleggia comandi-3d">{comandi3D}</div>}
+        </section>}
+        <div className="galleggia alto">
+          <div className="segmenti vetro" role="group" aria-label="Piano">
+            {M.piani.map(x => <button key={x.id} aria-pressed={piano === x.id} onClick={() => setPiano(x.id)}>{x.nome}</button>)}
+            {vista === "3d" && <button aria-pressed={piano === "tutti"} onClick={() => setPiano("tutti")}>Tutta</button>}
+          </div>
+          {vista === "divisa" && comandiPianta}
+          <span className="spazio" />
+          {vista === "pianta" && comandiPianta}
+          {vista === "3d" && comandi3D}
+          <div className="segmenti vetro" role="group" aria-label="Vista">
+            <button aria-pressed={vista === "pianta"} onClick={() => scegliVista("pianta")}>Pianta</button>
+            <button aria-pressed={vista === "divisa"} onClick={() => scegliVista("divisa")} className="nascondi-stretto" title="Pianta e 3D affiancati: il 3D si aggiorna mentre disegni">Pianta + 3D</button>
+            <button aria-pressed={vista === "3d"} onClick={() => scegliVista("3d")}>3D</button>
+          </div>
+        </div>
         {bozza && <div className="foglio-nota vetro" style={{ background: "var(--panel)" }}>
           <p className="etichetta" style={{ margin: 0 }}>{bozza.tipo === "appunto" ? "Appunto per Claude" : bozza.tipo === "calibra" ? `Hai misurato ${Math.round(Math.hypot(bozza.b.x - bozza.a.x, bozza.b.y - bozza.a.y))} cm sulla foto. Quanto è lungo davvero?` : p.pubblicato ? "Cosa è cambiato? Lo legge il cliente (puoi lasciarlo vuoto)" : "Pubblica la prima versione per il cliente. Vuoi lasciargli un messaggio?"}</p>
           {bozza.tipo === "calibra"
@@ -415,14 +516,17 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
             <button className="btn" onClick={() => setBozza(null)}>Annulla</button>
           </div>
         </div>}
-        {avviso && <div className={"avviso vetro" + (avviso.claude ? " claude" : "")} role="status">{avviso.t}</div>}
+        {avviso && <div className={"avviso vetro" + (avviso.claude ? " claude" : "")} role="status">
+          <span>{avviso.t}</span>
+          {avviso.azione && <button className="btn piccolo" onClick={() => { avviso.azione![1](); setAvviso(null); }}>{avviso.azione[0]}</button>}
+        </div>}
+        {scorciatoie && <Scorciatoie onChiudi={() => setScorciatoie(false)} />}
       </main>
 
       <aside className={"ed-pannello ed-dx" + (aperto === "dx" ? " aperto" : "")}>
         {elSel && <Proprieta M={M} el={elSel} testo={() => R.current.testo} cambia={cambia} onChiudi={() => setSel(null)}
-          onElimina={() => { cambia(togli(R.current.testo, elSel.riga)); setSel(null); }}
-          onDuplica={() => nuovaRiga(sposta(M.righe[elSel.riga].trim(), 0, 30, 30))}
-          onAppunto={() => { setVista("pianta"); setStrumento("appunto"); setModoAppunto("punto"); mostra("Tocca il punto della pianta dove va l'appunto"); }} />}
+          onElimina={() => elimina(elSel.riga)} onDuplica={() => duplica(elSel.riga)} onBuco={bucoScala}
+          onAppunto={() => { versoPianta(); setStrumento("appunto"); setModoAppunto("punto"); mostra("Tocca il punto della pianta dove va l'appunto"); }} />}
         <div className="schede" role="tablist">
           <button role="tab" aria-selected={dx === "appunti"} onClick={() => setDx("appunti")}>Appunti ({appunti.filter(a => a.stato === "da fare").length})</button>
           <button role="tab" aria-selected={dx === "claude"} onClick={() => setDx("claude")} style={{ color: dx === "claude" ? "var(--claude)" : undefined }}>Cosa fa Claude</button>
@@ -430,7 +534,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
         {dx === "appunti" && <div className="scorre">
           <div className="blocco" style={{ gridTemplateColumns: "1fr auto", alignItems: "center" }}>
             <div className="segmenti">{(["da fare", "tutti"] as const).map(f => <button key={f} aria-pressed={filtro === f} onClick={() => setFiltro(f)}>{f === "da fare" ? "Da fare" : "Tutti"}</button>)}</div>
-            <button className="btn piccolo" onClick={() => { setVista("pianta"); setStrumento("appunto"); }}>Nuovo</button>
+            <button className="btn piccolo" onClick={() => { versoPianta(); setStrumento("appunto"); }}>Nuovo</button>
           </div>
           {!visibili.length && <div className="blocco piccolo tenue">Nessun appunto {filtro === "da fare" ? "da fare" : ""}. Scegli Appunto in basso e tocca la pianta: scrivi cosa cambiare, Claude lo trova con le coordinate.</div>}
           <div style={{ display: "grid", gap: 8, padding: 12 }}>
@@ -461,6 +565,30 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
             <span className="tenue">{p.pubblicato ? `Vede la versione ${p.pubblicato.versione}, pubblicata ${quanto(p.pubblicato.quando)}.` : "Funziona dopo la prima pubblicazione."}</span></div>
         </div>}
       </aside>
+    </div>
+  );
+}
+
+const TASTI: [string, [string, string][]][] = [
+  ["Attrezzi", [["V", "Sposta e scegli"], ["M", "Muro"], ["S", "Stanza"], ["B", "Buco nel pavimento"], ["P", "Porta"], ["F", "Finestra"], ["A", "Arredo"], ["Q", "Misura"], ["N", "Appunto per Claude"]]],
+  ["Elemento scelto", [["← ↑ → ↓", "Sposta di 1 cm (Maiusc: 10 cm)"], ["R", "Ruota di 90°"], ["Ctrl+D", "Duplica"], ["Ctrl+C, Ctrl+V", "Copia e incolla"], ["Canc", "Elimina"], ["Esc", "Lascia"]]],
+  ["Mentre tiri un muro", [["420+Invio", "Tratto lungo esattamente 420 cm"], ["Backspace", "Togli l'ultimo punto"], ["Tasto destro", "Togli l'ultimo punto"], ["Doppio clic", "Finisci"], ["Alt", "Senza agganci, al centimetro"]]],
+  ["Sempre", [["Ctrl+Z", "Annulla"], ["Ctrl+Maiusc+Z", "Rifai"], ["Rotella", "Zoom"], ["Trascina il vuoto", "Spostati nella pianta"], ["?", "Questo pannello"]]],
+];
+function Scorciatoie({ onChiudi }: { onChiudi: () => void }) {
+  return (
+    <div className="scorciatoie-fondo" onClick={onChiudi}>
+      <section className="scorciatoie vetro" role="dialog" aria-label="Scorciatoie da tastiera" onClick={e => e.stopPropagation()}>
+        <header><b>Scorciatoie</b><button className="btn piccolo" onClick={onChiudi} aria-label="Chiudi">✕</button></header>
+        <div className="colonne">
+          {TASTI.map(([gruppo, voci]) => (
+            <div key={gruppo}>
+              <h3>{gruppo}</h3>
+              <dl>{voci.map(([k, v]) => <div key={k}><dt>{k.split(", ").map((x, i) => <span key={i}>{x.split("+").map((t, j) => <kbd key={j}>{t}</kbd>)}</span>)}</dt><dd>{v}</dd></div>)}</dl>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

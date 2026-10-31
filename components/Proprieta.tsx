@@ -2,12 +2,29 @@
 // Il pannello Proprietà: campi veri per ogni tipo di elemento. Ogni campo riscrive solo il suo pezzo di riga.
 import { useEffect, useRef, useState } from "react";
 import { CATALOGO, COLORI, hex } from "@/lib/arredi";
-import { area2, cambiaRiga, imposta, impostaPunti, lati, segmenti, segna, type Elemento, type Modello } from "@/lib/lingua";
+import { angoli, area2, cambiaRiga, dentro, imposta, impostaPunti, lati, segmenti, segna, type Arredo, type Elemento, type Modello } from "@/lib/lingua";
 
 type Props = {
   M: Modello; el: Elemento; testo: () => string; cambia: (t: string, scrivendo?: boolean) => void;
-  onChiudi: () => void; onElimina: () => void; onDuplica: () => void; onAppunto: () => void;
+  onChiudi: () => void; onElimina: () => void; onDuplica: () => void; onAppunto: () => void; onBuco?: (a: Arredo) => void;
 };
+
+/** Il piano subito sopra (per quota), se c'è. */
+export const pianoSopra = (M: Modello, piano: string) => {
+  const q = M.piani.find(p => p.id === piano)?.quota ?? 0;
+  return M.piani.filter(p => p.quota > q).sort((a, b) => a.quota - b.quota)[0];
+};
+const SCALA = /^scala\b|stair/i;                                       // "Scala a U…" sì, "Ripostiglio sottoscala" no
+/** Per una scala: al piano di sopra il pavimento è già aperto? (da solo, con un foro, o perché lì non c'è pavimento) */
+function bucoSopra(M: Modello, a: Arredo) {
+  const su = pianoSopra(M, a.piano), qui = M.piani.find(p => p.id === a.piano);
+  if (!su || !qui) return null;
+  if (a.cosa === "scala" && Math.abs(qui.quota + a.H - su.quota) < 40) return { su, come: "da solo" as const };
+  const q = angoli(a), c = q.reduce((s, v) => ({ x: s.x + v.x / 4, y: s.y + v.y / 4 }), { x: 0, y: 0 });
+  if (M.el.some(f => f.tipo === "foro" && f.piano === su.id && ([...q, c].some(v => dentro(v, f.punti)) || f.punti.some(v => dentro(v, q))))) return { su, come: "foro" as const };
+  if (!M.el.some(s => s.tipo === "stanza" && s.piano === su.id && dentro(c, s.punti))) return { su, come: "vuoto" as const };
+  return { su, come: "chiuso" as const };
+}
 
 /** Numero con unità: si conferma dopo una breve pausa, con Invio o uscendo dal campo. */
 function Numero({ nome, valore, unita = "cm", min = 0, passo = 1, segnaposto, onCambia }: { nome: string; valore: number | ""; unita?: string; min?: number; passo?: number; segnaposto?: string; onCambia: (v: number) => void }) {
@@ -75,7 +92,7 @@ function Tavolozza({ nome, valore, onCambia }: { nome: string; valore: string; o
 }
 
 const maiuscola = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ");
-function titolo(e: Elemento) {
+export function titolo(e: Elemento) {
   switch (e.tipo) {
     case "muro": return e.fino !== e.altezza ? "Muro sotto falda" : "Muro";
     case "stanza": return e.nome;
@@ -84,14 +101,14 @@ function titolo(e: Elemento) {
     case "arredo": return e.cosa === "modello" ? e.nome : maiuscola(e.cosa);
     case "tetto": return "Tetto";
     case "misura": return "Misura";
-    case "foro": return "Foro nel solaio";
+    case "foro": return "Buco nel pavimento";
   }
 }
 const lunghezza = (punti: { x: number; y: number }[], chiuso = false) =>
   (chiuso ? lati(punti) : punti.slice(1).map((p, i) => [punti[i], p] as const)).reduce((s, [a, b]) => s + Math.hypot(b.x - a.x, b.y - a.y), 0);
 const virgolette = (s: string) => (/^[\p{L}][\p{L}\d_'-]*$/u.test(s) ? s : `"${s.replace(/"/g, "'")}"`);
 
-export default function Proprieta({ M, el, testo, cambia, onChiudi, onElimina, onDuplica, onAppunto }: Props) {
+export default function Proprieta({ M, el, testo, cambia, onChiudi, onElimina, onDuplica, onAppunto, onBuco }: Props) {
   const r = el.riga, riga = M.righe[r] ?? "";
   const set = (k: string, v: string | number | null, scrivendo = false) => cambia(imposta(testo(), r, k, v === null ? null : String(v)), scrivendo);
   const flag = (k: string, on: boolean) => cambia(segna(testo(), r, k, on));
@@ -99,6 +116,13 @@ export default function Proprieta({ M, el, testo, cambia, onChiudi, onElimina, o
   const altezzaPiano = M.piani.find(p => p.id === el.piano)?.altezza ?? 270;
 
   let campi: React.ReactNode = null, info: string[] = [];
+  const buco = el.tipo === "arredo" && (el.cosa === "scala" || SCALA.test(el.nome)) ? bucoSopra(M, el) : null;
+  const scala = buco && <div className="buco-scala">
+    {buco.come === "chiuso"
+      ? <><span>Al piano <b>{buco.su.nome}</b> il pavimento è ancora chiuso sopra questa scala.</span>
+        <button type="button" className="btn piccolo primario" onClick={() => onBuco?.(el as Arredo)}>Apri il buco</button></>
+      : <span>{{ "da solo": "Al piano di sopra il pavimento si apre da solo sopra la scala.", foro: `C'è il buco nel pavimento del piano ${buco.su.nome}.`, vuoto: `Al piano ${buco.su.nome} qui non c'è pavimento: si passa.` }[buco.come]}</span>}
+  </div>;
   switch (el.tipo) {
     case "muro": {
       const varia = el.fino !== el.altezza;
@@ -161,6 +185,7 @@ export default function Proprieta({ M, el, testo, cambia, onChiudi, onElimina, o
           <Numero nome="Alzato da terra" valore={el.quota} onCambia={v => set("quota", v || null)} />
           <Interruttore nome="Copertura" aiuto="Si nasconde quando guardi dentro" on={!!el.copertura} onCambia={on => flag("copertura", on)} />
           <Interruttore nome="Calpestabile" aiuto="Ci si cammina sopra" on={!!el.calpestabile} onCambia={on => flag("calpestabile", on)} />
+          {scala}
         </>;
         break;
       }
@@ -177,6 +202,7 @@ export default function Proprieta({ M, el, testo, cambia, onChiudi, onElimina, o
         <Ruota gradi={el.ruota} onCambia={v => set("ruota", v || null)} />
         <Numero nome="Alzato da terra" valore={el.quota} onCambia={v => set("quota", v || null)} />
         <Tavolozza nome="Colore" valore={el.colore} onCambia={v => set("colore", v)} />
+        {scala}
       </>;
       break;
     case "tetto":
@@ -195,7 +221,7 @@ export default function Proprieta({ M, el, testo, cambia, onChiudi, onElimina, o
       info = [`${Math.round(Math.hypot(el.punti[1].x - el.punti[0].x, el.punti[1].y - el.punti[0].y))} cm`];
       break;
     case "foro":
-      info = ["Buco nel solaio, di solito per la scala che sale da sotto"];
+      info = [`${Math.round(Math.max(...el.punti.map(q => q.x)) - Math.min(...el.punti.map(q => q.x)))} × ${Math.round(Math.max(...el.punti.map(q => q.y)) - Math.min(...el.punti.map(q => q.y)))} cm`, "il pavimento qui è aperto"];
       break;
   }
 

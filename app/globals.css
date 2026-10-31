@@ -107,8 +107,36 @@ textarea { resize: vertical; }
 .schede button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
 .scorre { overflow: auto; min-height: 0; flex: 1; }
 .blocco { padding: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
-.ed-centro { position: relative; min-width: 0; min-height: 0; background: var(--carta); overflow: hidden; }
-.ed-centro > .vista { position: absolute; inset: 0; }
+.ed-centro { position: relative; min-width: 0; min-height: 0; background: var(--carta); overflow: hidden; container: centro / size; }
+.ed-centro > .lato { position: absolute; inset: 0; }
+.lato > .vista { position: absolute; inset: 0; }
+.lato-pianta { container: lato / size; }
+
+/* pianta e 3D affiancati: --parte è lo spazio della pianta; in verticale se il centro è più alto che largo */
+.divisa > .lato-pianta { right: auto; width: var(--parte); }
+.divisa > .lato-3d { left: var(--parte); }
+.divisore { position: absolute; z-index: 5; top: 0; bottom: 0; left: var(--parte); width: 16px; transform: translateX(-50%); cursor: col-resize; touch-action: none; display: grid; place-items: center; outline: none; }
+.divisore::before { content: ""; position: absolute; inset: 0 auto 0 50%; width: 1px; transform: translateX(-50%); background: var(--line); transition: background 0.15s, width 0.15s; }
+.divisore::after { content: ""; position: relative; width: 6px; height: 40px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14); transition: border-color 0.15s, background 0.15s; }
+.divisore:hover::before, .divisore:focus-visible::before, .divisore:active::before { width: 2px; background: var(--accent); }
+.divisore:hover::after, .divisore:focus-visible::after, .divisore:active::after { border-color: var(--accent); background: var(--accent); }
+@container centro (orientation: portrait) {
+  .divisa > .lato-pianta { width: auto; right: 0; bottom: auto; height: var(--parte); }
+  .divisa > .lato-3d { left: 0; top: var(--parte); }
+  .divisore { inset: var(--parte) 0 auto 0; width: auto; height: 16px; transform: translateY(-50%); cursor: row-resize; }
+  .divisore::before { inset: 50% 0 auto 0; width: auto; height: 1px; transform: translateY(-50%); }
+  .divisore:hover::before, .divisore:focus-visible::before, .divisore:active::before { width: auto; height: 2px; }
+  .divisore::after { width: 40px; height: 6px; }
+}
+/* lato della pianta stretto: attrezzi solo con l'icona (il nome resta nel suggerimento al passaggio), scala sopra gli attrezzi */
+@container lato (max-width: 620px) {
+  .divisa .attrezzi button { min-width: 44px; padding: 4px 6px; }
+  .divisa .attrezzi button span { display: none; }
+  .divisa .pianta-scala { bottom: 78px; }
+  .divisa .pianta-scala .coord { display: none; }
+}
+@media (max-width: 720px) { .nascondi-stretto { display: none; } }
+.comandi-3d { left: 50%; bottom: 14px; transform: translateX(-50%); }
 .galleggia { position: absolute; z-index: 3; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .galleggia.alto { top: 12px; left: 12px; right: 12px; pointer-events: none; }
 .galleggia.alto > * { pointer-events: auto; }
@@ -143,7 +171,7 @@ textarea { resize: vertical; }
 .storia-btn { display: flex; gap: 2px; }
 .storia-btn .btn { min-width: 32px; padding: 0; font-size: 16px; }
 .storia-btn .btn:disabled { opacity: 0.35; cursor: default; }
-.suggerimento { position: absolute; z-index: 3; left: 50%; bottom: 82px; transform: translateX(-50%); font-size: 13px; padding: 6px 12px; border-radius: 999px; color: var(--muted); pointer-events: none; white-space: nowrap; }
+.suggerimento { position: absolute; z-index: 3; left: 50%; bottom: 82px; transform: translateX(-50%); font-size: 13px; padding: 6px 12px; border-radius: 999px; color: var(--muted); pointer-events: none; white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
 .avviso { position: absolute; z-index: 6; left: 50%; top: 14px; transform: translateX(-50%); max-width: min(520px, calc(100% - 24px)); padding: 9px 14px; border-radius: 12px; font-size: 14px; display: flex; gap: 10px; align-items: center; animation: entra 0.25s ease-out; }
 .avviso.claude { border-color: var(--claude); color: var(--claude); }
 @keyframes entra { from { opacity: 0; transform: translate(-50%, -6px); } }
@@ -298,3 +326,27 @@ textarea { resize: vertical; }
   .dock { left: auto; right: 16px; bottom: 16px; width: 27rem; border-radius: 16px; padding-bottom: 12px; }
   .foglio { left: auto; width: 27rem; right: 16px; }
 }
+
+/* scala: il buco al piano di sopra */
+.buco-scala { display: grid; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--panel); border: 1px dashed var(--line); font-size: 13px; color: var(--muted); }
+.buco-scala b { color: var(--fg); font-weight: 600; }
+.buco-scala .btn { justify-self: start; }
+
+/* scorciatoie da tastiera */
+.scorciatoie-fondo { position: absolute; inset: 0; z-index: 9; display: grid; place-items: center; padding: 16px; background: rgba(20, 22, 26, 0.18); animation: entra 0.18s ease-out; }
+.scorciatoie { width: min(760px, 100%); max-height: calc(100% - 32px); overflow: auto; padding: 18px 20px 20px; border-radius: 16px; background: var(--panel); display: grid; gap: 14px; }
+.scorciatoie > header { display: flex; align-items: center; justify-content: space-between; }
+.scorciatoie > header b { font: 400 22px/1.1 var(--display); }
+.scorciatoie .colonne { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px 28px; }
+.scorciatoie h3 { margin: 0 0 6px; font: 600 12.5px var(--ui); color: var(--muted); }
+.scorciatoie dl { margin: 0; display: grid; gap: 5px; }
+.scorciatoie dl > div { display: grid; grid-template-columns: 132px 1fr; gap: 10px; align-items: baseline; font-size: 13.5px; }
+.scorciatoie dt { display: flex; flex-wrap: wrap; gap: 4px; }
+.scorciatoie dt > span { display: inline-flex; gap: 3px; }
+.scorciatoie dd { margin: 0; }
+kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line); border-bottom-width: 2px; background: var(--bg); font: 500 12px/1.5 var(--ui); text-align: center; color: var(--fg); white-space: nowrap; }
+.avviso .btn { flex: none; }
+
+/* pianta: quello che puoi prendere si accende sotto il cursore */
+.pianta:not(.disegno) :is(.arredo, .apertura, .muro, .foro):hover { filter: drop-shadow(0 0 1.2px var(--accent)) drop-shadow(0 0 1.2px var(--accent)); }
+.pianta:not(.disegno) :is(.stanza, .area):hover > * { stroke: var(--accent) !important; stroke-width: 2px !important; vector-effect: non-scaling-stroke; }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { ESEMPIO } from "./esempio.ts";
 import { aggiungi, dentro, imposta, impostaPunti, leggi, segna, righeCambiate, sposta, type Apertura, type Arredo, type Stanza } from "./lingua.ts";
 import { passaggi, testoPassaggi } from "./passaggi.ts";
+import { muroInCorso } from "./scena.ts";
 
 const M = leggi(ESEMPIO);
 assert.deepEqual(M.errori, [], "l'esempio non deve avere errori");
@@ -62,4 +63,8 @@ assert.match(I.errori.map(e => e.msg).join(), /"Boh": non c'è/);
 assert.ok(!I.errori.some(e => /non entra/.test(e.msg)), "una porta a cavallo di due tratti allineati entra");
 assert.equal(segna("muro 0,0 >10 # x", 0, "chiudi", true), "muro 0,0 >10 chiudi # x");
 assert.equal(segna("muro 0,0 >10 chiuso spessore 9", 0, "chiudi", false), "muro 0,0 >10 spessore 9");
+// il muro in corso nel 3D: lungo 400 + mezzo spessore per parte, alto da 100 a 300 cm
+const fant = muroInCorso([{ x: 0, y: 0 }, { x: 400, y: 0 }], 0, 20, 100, 300);
+fant.computeBoundingBox();
+assert.deepEqual([fant.boundingBox!.min.x, fant.boundingBox!.max.x, fant.boundingBox!.min.y, fant.boundingBox!.max.y].map(v => +v.toFixed(2)), [-0.1, 4.1, 0, 3]);
 console.log("lingua ok");

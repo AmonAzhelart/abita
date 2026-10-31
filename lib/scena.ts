@@ -28,7 +28,7 @@ function forma(pts: Pt[], buchi: Pt[][] = []) {
   for (const h of buchi) s.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p.x / 100, p.y / 100))));
   return s;
 }
-function lastra(pts: Pt[], top: number, spessore: number, buchi: Pt[][] = []) {
+export function lastra(pts: Pt[], top: number, spessore: number, buchi: Pt[][] = []) {
   const g = new THREE.ExtrudeGeometry(forma(pts, buchi), { depth: spessore / 100, bevelEnabled: false });
   g.rotateX(Math.PI / 2);                                // (x, y, z) -> (x, -z, y): la pianta sta in orizzontale, spessore verso il basso
   g.translate(0, top / 100, 0);
@@ -150,6 +150,22 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
   const centro = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
   const raggio = box.isEmpty() ? 8 : Math.max(4, box.getSize(new THREE.Vector3()).length() / 2);
   return { piani, tetti, stanze, centro, raggio, dispose: () => { geoms.forEach(g => g.dispose()); mats.forEach(m => m.dispose()); } };
+}
+
+/** Il muro che stai tirando in pianta: stessi conti dei muri veri (altezza da h0 a h1 lungo tutta la linea), senza porte né finestre. */
+export function muroInCorso(pts: Pt[], quota: number, t: number, h0: number, h1: number) {
+  const b: Buf = new Map(), lun = pts.slice(1).map((c, i) => Math.hypot(c.x - pts[i].x, c.y - pts[i].y));
+  const tot = lun.reduce((x, y) => x + y, 0) || 1, cima = (s: number) => h0 + (h1 - h0) * Math.min(1, Math.max(0, s / tot));
+  let da = 0;
+  lun.forEach((L, i) => {
+    const a = pts[i], c = pts[i + 1];
+    if (L >= 1) scatola(b, "m", (a.x + c.x) / 2, (a.y + c.y) / 2, quota, L + t, t, cima(da - t / 2), (c.x - a.x) / L, (c.y - a.y) / L, cima(da + L + t / 2));
+    da += L;
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(b.get("m") ?? [], 3));
+  g.computeVertexNormals();
+  return g;
 }
 
 function tetto(e: Extract<Modello["el"][number], { tipo: "tetto" }>, base: number, mat: (k: string) => THREE.Material, geoms: THREE.BufferGeometry[]) {
