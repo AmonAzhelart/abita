@@ -16,7 +16,7 @@ function zIn(a: number[], b: number[], c: number[], p: Pt): number | null {
   return l1 < -1e-4 || l2 < -1e-4 || l3 < -1e-4 ? null : l1 * a[2] + l2 * b[2] + l3 * c[2];
 }
 /** Il sotto di un tetto sopra il punto, se il punto è sotto il tetto (sporto compreso). */
-function sottoTetto(t: Tetto, base: number, p: Pt): number | null {
+export function sottoTetto(t: Tetto, base: number, p: Pt): number | null {
   const [a, b] = t.punti, s = t.sporto, h = t.altezza;
   if (p.x < a.x - s || p.x > b.x + s || p.y < a.y - s || p.y > b.y + s) return null;
   if (!t.falde) return base;
@@ -52,6 +52,12 @@ export function altezzaLibera(M: Modello, piano: string, p: Pt, mesh: Triangoli 
       const scala = SCALA.test(a.nome);                        // su una scala importata si sta sul gradino, a qualunque quota
       if (a.calpestabile) triangoli(a, z => { if (z > base && (scala || z < z0 + 250)) { base = z; sotto = `"${a.nome}"`; } });
     } else if (CATALOGO[a.cosa]?.ostacolo !== false && a.quota < 100 && z0 + a.quota + a.H > base) { base = z0 + a.quota + a.H; sotto = `sopra ${etichetta(a)} (riga ${a.riga + 1}), alto ${Math.round(a.quota + a.H)} cm`; }
+  }
+  for (const a of M.el) {                                      // un oggetto importato che comincia all'altezza del corpo (parapetto, piano di lavoro): ci si sta sopra, come per i mobili
+    if (a.tipo !== "arredo" || a.piano !== piano || a.cosa !== "modello" || a.calpestabile || a.copertura || !qui(a)) continue;
+    let lo = Infinity, hi = -Infinity;
+    triangoli(a, z => { if (z > base - 2) { lo = Math.min(lo, z); hi = Math.max(hi, z); } });   // anche il fondo appoggiato a terra
+    if (lo < base + 100 && hi > base + 2) { base = hi; sotto = `sopra "${a.nome}" (riga ${a.riga + 1}), alto ${Math.round(hi - z0)} cm`; }
   }
 
   // la prima cosa sopra la testa

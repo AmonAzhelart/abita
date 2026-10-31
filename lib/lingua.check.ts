@@ -7,6 +7,7 @@ import { muroInCorso } from "./scena.ts";
 import { ancora } from "./ancora.ts";
 import { riepilogo, uso } from "./verifiche.ts";
 import { altezzaLibera } from "./altezza.ts";
+import { sezione } from "./sezione.ts";
 
 const M = leggi(ESEMPIO);
 assert.deepEqual(M.errori, [], "l'esempio non deve avere errori");
@@ -134,4 +135,9 @@ assert.match(su.sotto, /gradino della scala a U/);
 assert.equal(su.sopra, "tetto");
 assert.equal(su.cima, 580 - 0);
 assert.equal(altezzaLibera(M, "primo", { x: 755, y: 600 }).buco, true, "al primo piano lì c'è il buco della scala");
+// sezione lungo x=690: cucina alta 280, il solaio del primo si ferma dove comincia il buco della scala, i gradini ci sono
+const sz = sezione(M, { x: 690, y: -20 }, { x: 690, y: 820 });
+assert.equal(sz.quote.find(q => !q.scala && Math.round(q.s) === 215)?.libera, 280);
+assert.deepEqual(sz.pezzi.filter(p => p.cosa === "solaio" && p.p[0][1] === 280).map(p => [p.p[0][0], Math.round(p.p[1][0])]), [[35, 496]]);
+assert.ok(sz.pezzi.filter(p => p.cosa === "scala").length >= 5 && sz.pezzi.some(p => p.cosa === "tetto"));
 console.log("lingua ok");

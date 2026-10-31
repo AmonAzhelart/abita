@@ -28,21 +28,31 @@ const lontano = (cam: THREE.PerspectiveCamera) => Math.max(1, 1 / (cam.aspect ||
 export type Volo = { tipo: "panoramica" | "alto" | "entra" | "stanza"; riga?: number; n: number };
 /** Il muro che si sta tirando in pianta: la pianta lo passa qui a ogni movimento, senza far ridisegnare l'editor. */
 export type Traccia = { pts: Pt[]; spessore: number; a: number; b: number; quota: number };
+/** Dove cade un clic in 3D: il punto in pianta, il piano dell'oggetto toccato, la quota in cm. */
+export type Colpo = { p: Pt; piano: string; z: number };
+type P3 = [number, number, number];                        // x, y in pianta e quota, in cm
+/** Quello che gli attrezzi disegnano sopra la scena: linee, veli trasparenti, scritte. Sempre visibili, anche dietro i muri. */
+export type Disegno3D = { linee?: { pts: P3[]; chiusa?: boolean }[]; veli?: P3[][]; scritte?: { p: P3; testo: string; tono?: "basso" | "giusto" }[] };
 type Props = { modello: Modello; piano: string; tetto: boolean; nomi: boolean; volo: Volo; mesh?: Record<string, Mesh>; onStanza?: (riga: number) => void; traccia?: RefObject<((t: Traccia | null) => void) | null>; sel?: number | null;
   /** Con onSel un clic sceglie un elemento; con onPosa gli arredi si trascinano (dx, dy in cm, ruota se l'ancoraggio lo ha girato). */
   onSel?: (riga: number | null) => void; onPosa?: (riga: number, dx: number, dy: number, ruota?: number) => void;
+  /** Con un attrezzo in mano: un clic (senza trascinare) mette un punto; il cursore si segue per le anteprime. */
+  onPunto?: (q: Colpo, doppio: boolean) => void; onCursore?: (q: Colpo | null) => void; disegno?: Disegno3D | null;
+  /** Un disegno cominciato: i punti dopo il primo cadono sul suo pavimento, qualunque cosa ci sia davanti. */
+  fisso?: { piano: string; quota: number } | null;
 };
 type Trascina = { perno: THREE.Group; copie: { pos: THREE.BufferAttribute; da: number; prima: Float32Array }[]; esito?: Ancora };
 
-export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onStanza, traccia, sel, onSel, onPosa }: Props) {
-  const box = useRef<HTMLDivElement>(null), tags = useRef<HTMLDivElement>(null);
+export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onStanza, traccia, sel, onSel, onPosa, onPunto, onCursore, disegno, fisso }: Props) {
+  const box = useRef<HTMLDivElement>(null), tags = useRef<HTMLDivElement>(null), segni = useRef<HTMLDivElement>(null);
+  const scritte = useRef<{ v: THREE.Vector3; el: HTMLElement }[]>([]);
   const S = useRef<{
     r: THREE.WebGLRenderer; scene: THREE.Scene; cam: THREE.PerspectiveCamera; ctl: OrbitControls; sc?: Scena; ground: THREE.Mesh; needs: boolean;
     anim?: { t0: number; p0: THREE.Vector3; t0v: THREE.Vector3; p1: THREE.Vector3; t1: THREE.Vector3 };
     trascina?: Trascina; contorno?: THREE.Group; facce?: THREE.Mesh; libera?: (rimetti: boolean) => void;
   } | null>(null);
-  const prop = useRef({ piano, tetto, nomi, onStanza, modello, onSel, onPosa });
-  prop.current = { piano, tetto, nomi, onStanza, modello, onSel, onPosa };
+  const prop = useRef({ piano, tetto, nomi, onStanza, modello, onSel, onPosa, onPunto, onCursore, fisso });
+  prop.current = { piano, tetto, nomi, onStanza, modello, onSel, onPosa, onPunto, onCursore, fisso };
 
   useEffect(() => {
     const el = box.current!;
@@ -142,6 +152,11 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
           t.style.visibility = "visible";
           t.style.transform = `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, -50%)`;
         });
+        for (const sc of scritte.current) {
+          v.copy(sc.v).project(cam);
+          sc.el.style.visibility = v.z > 1 ? "hidden" : "visible";
+          sc.el.style.transform = `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, -50%)`;
+        }
       }
     };
     raf = requestAnimationFrame(loop);
@@ -206,7 +221,25 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
       s.trascina = { perno, copie };
     };
     let presa: { id: number; x: number; y: number; riga: number | null; a?: Arredo; p0?: THREE.Vector3; mosso: boolean } | null = null, ultimaMira = 0;
+    // con un attrezzo: il punto toccato (pavimento, muro, gradino, terreno) e il piano a cui appartiene
+    let clic: { id: number; x: number; y: number } | null = null, ultimoClic = { t: 0, x: 0, y: 0 };
+    const puntoSotto = (): Colpo | null => {
+      const sc = S.current?.sc, M = prop.current.modello, f = prop.current.fisso;
+      if (!sc) return null;
+      if (f) {
+        suolo.constant = -f.quota / 100;
+        return ray.ray.intersectPlane(suolo, pt) ? { p: { x: Math.round(pt.x * 1000) / 10, y: Math.round(pt.z * 1000) / 10 }, piano: f.piano, z: f.quota } : null;
+      }
+      const h = ray.intersectObjects([...sc.piani.values(), sc.tetti, ground].filter(g => g.visible), true)[0];
+      if (!h) return null;
+      const z = h.point.y * 100;
+      let o: THREE.Object3D | null = h.object, id = "";
+      for (; o && !id; o = o.parent) if (sc.piani.get(o.name) === o) id = o.name;
+      if (!id) id = M.piani.filter(q => q.quota <= z + 5).sort((a, b) => b.quota - a.quota)[0]?.id ?? M.piani[0]?.id ?? "";
+      return { p: { x: Math.round(h.point.x * 1000) / 10, y: Math.round(h.point.z * 1000) / 10 }, piano: id, z: Math.round(z) };
+    };
     const giu = (e: PointerEvent) => {
+      if (prop.current.onPunto) { if (e.button === 0 && e.target === r.domElement) clic = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
       if (!prop.current.onSel || e.button !== 0 || e.target !== r.domElement || presa) return;
       mira(e);
       const riga = colpo(), M = prop.current.modello, a = M.el.find(x => x.riga === riga);
@@ -222,6 +255,15 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
     };
     const muovi = (e: PointerEvent) => {
       const s = S.current!;
+      if (prop.current.onPunto) {
+        if (clic && Math.hypot(e.clientX - clic.x, e.clientY - clic.y) > 4) clic = null;   // trascini: giri la camera, non metti punti
+        r.domElement.style.cursor = "crosshair";
+        if (e.buttons || e.timeStamp - ultimaMira < 40) return;
+        ultimaMira = e.timeStamp;
+        mira(e);
+        prop.current.onCursore?.(puntoSotto());
+        return;
+      }
       if (!presa) {                              // sopra un arredo compare la manina
         if (!prop.current.onPosa || e.buttons || e.timeStamp - ultimaMira < 80) return;
         ultimaMira = e.timeStamp;
@@ -247,6 +289,17 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
       s.needs = true;
     };
     const su = (e: PointerEvent) => {
+      if (prop.current.onPunto) {
+        if (!clic || e.pointerId !== clic.id) return;
+        clic = null;
+        mira(e);
+        const q = puntoSotto();
+        if (!q) return;
+        const doppio = e.timeStamp - ultimoClic.t < 350 && Math.hypot(e.clientX - ultimoClic.x, e.clientY - ultimoClic.y) < 8;
+        ultimoClic = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+        prop.current.onPunto(q, doppio);
+        return;
+      }
       if (!presa || e.pointerId !== presa.id) return;
       const q = presa, t = S.current?.trascina;
       presa = null;
@@ -282,6 +335,8 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
     r.domElement.addEventListener("pointermove", muovi);
     r.domElement.addEventListener("pointerup", su);
     r.domElement.addEventListener("pointercancel", su);
+    const fuori = () => { prop.current.onCursore?.(null); if (!prop.current.onPunto) r.domElement.style.cursor = ""; };
+    r.domElement.addEventListener("pointerleave", fuori);
     window.addEventListener("keydown", esc);
 
     return () => {
@@ -352,6 +407,45 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
     return () => { traccia.current = null; svuota(); grp.removeFromParent(); pieno.dispose(); filo.dispose(); };
   }, [traccia]);
 
+  // i segni degli attrezzi: linee e veli nel colore dell'editor sopra a tutto, scritte che seguono la scena
+  useEffect(() => {
+    const s = S.current, div = segni.current;
+    if (!s || !div) return;
+    const cs = getComputedStyle(box.current!), col = new THREE.Color(cs.getPropertyValue("--accent").trim() || "#2557A7");
+    const filo = new THREE.LineBasicMaterial({ color: col, depthTest: false, transparent: true });
+    const velo = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.13, depthWrite: false, side: THREE.DoubleSide });
+    const grp = new THREE.Group(), W = ([x, y, z]: P3) => new THREE.Vector3(x / 100, z / 100, y / 100);
+    for (const l of disegno?.linee ?? []) {
+      if (l.pts.length < 2) continue;
+      const g = new THREE.BufferGeometry().setFromPoints(l.pts.map(W)), o = l.chiusa ? new THREE.LineLoop(g, filo) : new THREE.Line(g, filo);
+      o.renderOrder = 12;
+      grp.add(o);
+    }
+    for (const v of disegno?.veli ?? []) {
+      if (v.length < 3) continue;
+      const pts = v.map(W), g = new THREE.BufferGeometry().setFromPoints(pts.slice(1, -1).flatMap((q, i) => [pts[0], q, pts[i + 2]])), m = new THREE.Mesh(g, velo);
+      m.renderOrder = 11;
+      grp.add(m);
+    }
+    s.scene.add(grp);
+    scritte.current = (disegno?.scritte ?? []).map(t => {
+      const el = document.createElement("span");
+      el.className = "segno3d" + (t.tono ? " " + t.tono : "");
+      el.textContent = t.testo;
+      div.append(el);
+      return { v: W(t.p), el };
+    });
+    s.needs = true;
+    return () => {
+      grp.removeFromParent();
+      grp.traverse(o => (o as THREE.Mesh).geometry?.dispose());
+      filo.dispose(); velo.dispose();
+      div.replaceChildren();
+      scritte.current = [];
+      if (S.current) S.current.needs = true;
+    };
+  }, [disegno]);
+
   // l'elemento scelto in pianta: un contorno che si vede anche attraverso i muri
   useEffect(() => {
     const s = S.current, e = sel == null ? undefined : modello.el.find(x => x.riga === sel), P = e && modello.piani.find(p => p.id === e.piano);
@@ -402,6 +496,7 @@ export default function Vista3D({ modello, piano, tetto, nomi, volo, mesh, onSta
   return (
     <div ref={box} className="vista" style={{ background: "var(--sky)" }}>
       <div ref={tags} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
+      <div ref={segni} style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }} />
     </div>
   );
 }

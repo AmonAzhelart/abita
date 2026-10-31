@@ -3,17 +3,19 @@
 // Ogni modifica (scritta o disegnata) cambia il testo; il testo si salva da solo e Claude lo vede subito.
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as TastoReact, type PointerEvent as Puntatore } from "react";
-import { aggiungi, angoli, dentro, distSeg, imposta, impostaPunti, leggi, segmenti, slug, sposta, togli, type Arredo, type Modello, type Pt, type Stanza } from "@/lib/lingua";
+import { aggiungi, angoli, area2, dentro, distSeg, imposta, impostaPunti, lati, leggi, segmenti, slug, sposta, togli, type Arredo, type Modello, type Pt, type Stanza } from "@/lib/lingua";
 import { hex } from "@/lib/arredi";
 import { passaggi } from "@/lib/passaggi";
 import { NOMI_USO, riepilogo } from "@/lib/verifiche";
 import { altezzaLibera, type Altezza } from "@/lib/altezza";
+import { sezione } from "@/lib/sezione";
 import type { Appunto, Foto, Progetto } from "@/lib/progetti";
 import Catalogo from "./Catalogo";
 import Codice from "./Codice";
 import Pianta, { type Strumento } from "./Pianta";
 import Proprieta, { pianoSopra, Profilo, titolo } from "./Proprieta";
-import Vista3D, { useMesh, type Traccia, type Volo } from "./Vista3D";
+import VistaSezione from "./Sezione";
+import Vista3D, { useMesh, type Colpo, type Disegno3D, type Traccia, type Volo } from "./Vista3D";
 
 const m2 = (v: number) => v.toFixed(1).replace(".", ",");
 const metri = (cm: number) => (cm / 100).toFixed(2).replace(".", ",");
@@ -30,6 +32,18 @@ function Alto({ r, onChiudi }: { r: Altezza; onChiudi: () => void }) {
         <p><span className="tenue">Sopra:</span> {r.sopra}{r.cima !== null ? `, a ${r.cima} cm` : ""}</p>
         {piedi && L !== null && <p className={L < 200 ? "alto-basso" : L < 210 ? "alto-giusto" : "alto-ok"}>{L < 200 ? `Sotto i 2 m si batte la testa: mancano ${200 - L} cm` : L < 210 ? "Va bene per i 2 m, non per i 2,10 m chiesti da alcuni regolamenti" : "Ci si sta in piedi comodi"}</p>}
       </>}
+    </div>
+  );
+}
+/** La scheda dell'area misurata: superficie e perimetro, e se serve ne fai una stanza. */
+function Misurata({ pts, onStanza, onChiudi }: { pts: Pt[]; onStanza: () => void; onChiudi: () => void }) {
+  const A = Math.abs(area2(pts)) / 1e4, P = lati(pts).reduce((t, [a, b]) => t + Math.hypot(b.x - a.x, b.y - a.y), 0);
+  return (
+    <div className="alto-scheda vetro" role="status">
+      <header><span className="etichetta">Area misurata</span><button className="btn piccolo" onClick={onChiudi} aria-label="Chiudi">✕</button></header>
+      <b className="alto-valore">{A.toFixed(2).replace(".", ",")} m²</b>
+      <p><span className="tenue">Perimetro:</span> {metri(P)} m, {pts.length} lati</p>
+      <button className="btn piccolo" style={{ justifySelf: "start", marginTop: 4 }} onClick={onStanza}>Fanne una stanza</button>
     </div>
   );
 }
@@ -84,17 +98,19 @@ const COL_NOTA = (a: Appunto) => (a.stato === "fatta" ? "var(--fatta)" : a.da ==
 const I = {
   sposta: "M5 3l14 8-6 2-2 6z", muro: "M3 8h18v8H3z M9 8v8 M15 8v8", stanza: "M4 4h16v16H4z M4 12h7", porta: "M5 21V4h9v17 M14 4a10 10 0 0 1 5 9",
   finestra: "M4 5h16v14H4z M12 5v14 M4 12h16", arredo: "M4 11V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3 M3 11h18v6H3z M5 17v2 M19 17v2", misura: "M3 17L17 3l4 4L7 21z M7 13l2 2 M10 10l2 2 M13 7l2 2",
+  sezione: "M4 20V10l8-6 8 6v10 M2 14h3 M8 14h3 M13 14h3 M19 14h3", area: "M4 7l8-3 8 5-2 11H6z",
   appunto: "M4 4h16v12H8l-4 4z", altezza: "M12 4v15 M8.5 7.5L12 4l3.5 3.5 M4 20h16", foro: "M3 3h18v18H3z M8 8h2.5 M13.5 8H16v2.5 M16 13.5V16h-2.5 M10.5 16H8v-2.5 M8 10.5V8", foto: "M4 6h16v12H4z M8 14l3-3 3 3 2-2 4 4",
 };
 const Ico = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
-const ATTREZZI: [Strumento, string, string][] = [["sposta", "Sposta", "V"], ["muro", "Muro", "M"], ["stanza", "Stanza", "S"], ["foro", "Buco", "B"], ["porta", "Porta", "P"], ["finestra", "Finestra", "F"], ["arredo", "Arredo", "A"], ["misura", "Misura", "Q"], ["altezza", "Altezza", "H"], ["appunto", "Appunto", "N"]];
+const ATTREZZI: [Strumento, string, string][] = [["sposta", "Sposta", "V"], ["muro", "Muro", "M"], ["stanza", "Stanza", "S"], ["foro", "Buco", "B"], ["porta", "Porta", "P"], ["finestra", "Finestra", "F"], ["arredo", "Arredo", "A"], ["misura", "Misura", "Q"], ["altezza", "Altezza", "H"], ["sezione", "Sezione", "X"], ["area", "Area", "G"], ["appunto", "Appunto", "N"]];
 const AIUTO: Partial<Record<Strumento, string>> = {
   sposta: "Clic per scegliere, trascina per spostare. Canc elimina, R ruota",
   muro: "Clic per ogni angolo · scrivi una misura e Invio per un tratto esatto · doppio clic per finire",
   stanza: "Trascina da un angolo all'altro (misure interne)",
   foro: "Trascina un rettangolo: lì il pavimento si apre, per la scala che sale da sotto",
   porta: "Clic sopra un muro", finestra: "Clic sopra un muro", arredo: "Clic dove va il centro",
-  misura: "Clic sul primo punto e sul secondo", altezza: "Clic su un punto: quanto spazio c'è sopra la testa", calibra: "Clic su due punti della foto di cui sai la distanza vera",
+  misura: "Clic sul primo punto e sul secondo", altezza: "Clic su un punto: quanto spazio c'è sopra la testa",
+  sezione: "Clic su due punti: vedi la casa tagliata in piedi lungo quella linea", area: "Clic per ogni angolo · clic sul primo punto, doppio clic o Invio per chiudere", calibra: "Clic su due punti della foto di cui sai la distanza vera",
   foto: "Trascina la foto per metterla al suo posto",
 };
 
@@ -118,7 +134,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const [quote, setQuote] = useState(true), [vediPassaggi, setVediPassaggi] = useState(false), [tetto, setTetto] = useState(true);
   const [filtro, setFiltro] = useState<"da fare" | "tutti">("da fare");
   const [notaSel, setNotaSel] = useState<string | null>(null);
-  const [bozza, setBozza] = useState<{ tipo: "appunto"; a: Pt; b?: Pt; forma: "punto" | "linea" | "zona" } | { tipo: "calibra"; a: Pt; b: Pt } | { tipo: "pubblica" } | null>(null);
+  const [bozza, setBozza] = useState<{ tipo: "appunto"; a: Pt; b?: Pt; forma: "punto" | "linea" | "zona"; piano?: string } | { tipo: "calibra"; a: Pt; b: Pt } | { tipo: "pubblica" } | null>(null);
   const [scritto, setScritto] = useState("");
   const [avviso, setAvviso] = useState<{ t: string; claude?: boolean; azione?: [string, () => void] } | null>(null);
   const [scorciatoie, setScorciatoie] = useState(false);
@@ -132,6 +148,10 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const [storia, setStoria] = useState<{ rev: number; chi: string; quando: number; righe: number }[] | null>(null);
   const [catalogo, setCatalogo] = useState(false);
   const [alto, setAlto] = useState<{ p: Pt; piano: string; r: Altezza } | null>(null);   // l'ultima altezza libera misurata
+  const [taglio, setTaglio] = useState<[Pt, Pt] | null>(null);              // la linea dell'ultima sezione
+  const [misArea, setMisArea] = useState<{ piano: string; pts: Pt[] } | null>(null);
+  const [p3, setP3] = useState<{ piano: string; pts: Pt[] } | null>(null);   // i punti già messi in 3D (muro, area, linea, rettangolo)
+  const [cur3, setCur3] = useState<Colpo | null>(null);                     // dove punta il mouse in 3D, con un attrezzo in mano
   const [opzMuro, setOpzMuro] = useState({ spessore: 20, a: "", b: "" });   // a, b vuote = altezza del piano
   const [inCorso, setInCorso] = useState(false);                             // un muro a metà: Esc e Backspace sono suoi
   const traccia = useRef<((t: Traccia | null) => void) | null>(null);        // la pianta passa al 3D il muro in corso
@@ -215,7 +235,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
 
   const scegli = (riga: number | null) => { setSel(riga); if (riga != null) setVai({ riga, n: Date.now() }); };
   const elSel = sel != null ? M.el.find(e => e.riga === sel) : undefined;
-  const nuovaRiga = (riga: string) => { const r = aggiungi(R.current.testo, M, piano, riga); cambia(r.testo); setSel(r.riga); setVai({ riga: r.riga, n: Date.now() }); };
+  const nuovaRiga = (riga: string, pq = piano) => { const r = aggiungi(R.current.testo, M, pq, riga); cambia(r.testo); setSel(r.riga); setVai({ riga: r.riga, n: Date.now() }); };
 
   const hPiano = M.piani.find(x => x.id === piano)?.altezza ?? 270, qPiano = M.piani.find(x => x.id === piano)?.quota ?? 0;
   const hA = parseFloat(opzMuro.a) > 0 ? parseFloat(opzMuro.a) : hPiano, hB = parseFloat(opzMuro.b) > 0 ? parseFloat(opzMuro.b) : hA;
@@ -254,45 +274,81 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
     mostra(f.ok ? `Buco aperto nel pavimento del piano ${su.nome}` : `Buco aperto al piano ${su.nome}, ma esce dalla stanza ${f.stanza}: stringilo`, false, ["Guarda", () => setPiano(su.id)]);
   };
 
-  function disegnato(c: Strumento, pts: Pt[]) {
-    const [a, b] = pts;
+  function disegnato(c: Strumento, pts: Pt[], pq = piano) {
+    const [a, b] = pts, aggiungiQui = (t: string) => nuovaRiga(t, pq);
     switch (c) {
       case "muro": {
         const chiuso = pts.length > 2 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1;
-        nuovaRiga(`muro ${scriviPunti(chiuso ? pts.slice(0, -1) : pts)}${chiuso ? " chiudi" : ""} spessore ${opzMuro.spessore}`
+        aggiungiQui(`muro ${scriviPunti(chiuso ? pts.slice(0, -1) : pts)}${chiuso ? " chiudi" : ""} spessore ${opzMuro.spessore}`
           + (hA !== hPiano || hB !== hA ? ` altezza ${hA}` : "") + (hB !== hA ? ` fino ${hB}` : ""));
         return;
       }
       case "stanza": {
         const n = M.el.filter(e => e.tipo === "stanza").length + 1;
-        nuovaRiga(`stanza "Stanza ${n}" ${fmt(Math.min(a.x, b.x))},${fmt(Math.min(a.y, b.y))} ${fmt(Math.max(a.x, b.x))},${fmt(Math.max(a.y, b.y))} pavimento gres`);
+        aggiungiQui(`stanza "Stanza ${n}" ${fmt(Math.min(a.x, b.x))},${fmt(Math.min(a.y, b.y))} ${fmt(Math.max(a.x, b.x))},${fmt(Math.max(a.y, b.y))} pavimento gres`);
         return;
       }
       case "foro": {
-        const f = foroIn(M, piano, a, b);
-        nuovaRiga(f.riga);
+        const f = foroIn(M, pq, a, b);
+        aggiungiQui(f.riga);
         if (!f.ok) mostra(`Il buco esce dalla stanza ${f.stanza}: stringilo, se no il pavimento non si apre`);
         return;
       }
       case "porta": case "finestra": {
-        const q = suMuro(M, piano, a);
+        const q = suMuro(M, pq, a);
         if (!q) { mostra("Clicca sopra un muro"); return; }
-        nuovaRiga(`${c} ${c === "porta" ? 80 : 120} a ${q.x},${q.y}`);
+        aggiungiQui(`${c} ${c === "porta" ? 80 : 120} a ${q.x},${q.y}`);
         return;
       }
-      case "arredo": nuovaRiga(`${cosa} a ${fmt(a.x)},${fmt(a.y)}`); return;
-      case "misura": nuovaRiga(`misura ${fmt(a.x)},${fmt(a.y)} ${fmt(b.x)},${fmt(b.y)}`); return;
-      case "altezza": setAlto({ p: a, piano, r: altezzaLibera(M, piano, a, mesh) }); return;
-      case "appunto": setBozza({ tipo: "appunto", a, b, forma: modoAppunto }); setScritto(""); return;
+      case "arredo": aggiungiQui(`${cosa} a ${fmt(a.x)},${fmt(a.y)}`); return;
+      case "misura": aggiungiQui(`misura ${fmt(a.x)},${fmt(a.y)} ${fmt(b.x)},${fmt(b.y)}`); return;
+      case "altezza": setAlto({ p: a, piano: pq, r: altezzaLibera(M, pq, a, mesh) }); return;
+      case "sezione": if (Math.hypot(b.x - a.x, b.y - a.y) > 20) setTaglio([a, b]); return;
+      case "area": setMisArea({ piano: pq, pts: pts.length > 3 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1 ? pts.slice(0, -1) : pts }); return;
+      case "appunto": setBozza({ tipo: "appunto", a, b, forma: modoAppunto, piano: pq }); setScritto(""); return;
       case "calibra": setBozza({ tipo: "calibra", a, b }); setScritto(""); return;
     }
   }
+
+  // in 3D gli attrezzi funzionano come in pianta: il clic cade sul pavimento, sul muro o sul gradino che tocchi
+  const DUE: Strumento[] = ["misura", "sezione", "stanza", "foro"];
+  const aggancia3d = (q: Pt, pq: string, prima?: Pt): Pt => {
+    const vicino = (w: Pt) => Math.hypot(w.x - q.x, w.y - q.y) < 15;
+    if (p3 && p3.pts.length > 1 && vicino(p3.pts[0])) return p3.pts[0];       // per chiudere
+    for (const e of M.el) if (e.piano === pq && (e.tipo === "muro" || e.tipo === "stanza" || e.tipo === "area")) { const w = e.punti.find(vicino); if (w) return w; }
+    const s = { x: Math.round(q.x / 5) * 5, y: Math.round(q.y / 5) * 5 };
+    if (prima) {                                                              // quasi in squadra: dritto
+      const dx = s.x - prima.x, dy = s.y - prima.y;
+      if (Math.abs(dx) < Math.abs(dy) * 0.18) s.x = prima.x; else if (Math.abs(dy) < Math.abs(dx) * 0.18) s.y = prima.y;
+    }
+    return s;
+  };
+  const libero3d = strumento === "altezza" || strumento === "appunto" && modoAppunto === "punto";   // dove tocchi, senza agganci
+  const punto3d = (q: Colpo, doppio: boolean) => {
+    const c = strumento, pts = p3?.piano === q.piano ? p3.pts : [];
+    if (libero3d || c === "porta" || c === "finestra" || c === "arredo") { disegnato(c, [libero3d ? q.p : aggancia3d(q.p, q.piano)], q.piano); return; }
+    const s3 = aggancia3d(q.p, q.piano, pts[pts.length - 1]);
+    if (c === "muro" || c === "area") {
+      const ultimo = pts[pts.length - 1], chiude = pts.length >= 2 && Math.hypot(s3.x - pts[0].x, s3.y - pts[0].y) < 1;
+      if ((doppio || chiude) && pts.length) {
+        const fin = [...pts, ...(Math.hypot(s3.x - ultimo.x, s3.y - ultimo.y) > 1 ? [s3] : [])];
+        if (fin.length >= (c === "area" ? 3 : 2)) disegnato(c, fin, q.piano);
+        setP3(null);
+      } else setP3({ piano: q.piano, pts: [...pts, s3] });
+      return;
+    }
+    if (DUE.includes(c) || c === "appunto") {
+      if (!pts.length) { setP3({ piano: q.piano, pts: [s3] }); return; }
+      setP3(null);
+      disegnato(c, [pts[0], s3], q.piano);
+    }
+  };
 
   async function salvaBozza() {
     if (!bozza) return;
     if (bozza.tipo === "appunto") {
       if (!scritto.trim()) return;
-      const r = await rpc("appunto", { id, piano, tipo: bozza.forma, a: bozza.a, b: bozza.b, testo: scritto });
+      const r = await rpc("appunto", { id, piano: bozza.piano ?? piano, tipo: bozza.forma, a: bozza.a, b: bozza.b, testo: scritto });
       if (r.ok) { applica(r.doc); setDx("appunti"); } else mostra(r.errore);
     } else if (bozza.tipo === "calibra") {
       const f = p.foto.find(x => x.id === fotoAttiva), reale = parseFloat(scritto.replace(",", "."));
@@ -322,6 +378,11 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       }
       if (dentroCampo || e.ctrlKey || e.metaKey || e.altKey) return;
       if (inCorso) return;                                   // la pianta sta disegnando: i tasti li gestisce lei
+      if (p3?.pts.length) {                                  // un disegno a metà in 3D
+        if (e.key === "Escape") { setP3(null); return; }
+        if (e.key === "Backspace") { e.preventDefault(); setP3({ ...p3, pts: p3.pts.slice(0, -1) }); return; }
+        if (e.key === "Enter" && (strumento === "muro" || strumento === "area")) { if (p3.pts.length >= (strumento === "area" ? 3 : 2)) disegnato(strumento, p3.pts, p3.piano); setP3(null); return; }
+      }
       if (e.key === "?") { setScorciatoie(x => !x); return; }
       if (e.key === "Escape") { if (scorciatoie) { setScorciatoie(false); return; } setStrumento("sposta"); setSel(null); setBozza(null); setCatalogo(false); return; }
       if ((e.key === "Delete" || e.key === "Backspace") && sel != null && strumento === "sposta") { e.preventDefault(); elimina(sel); return; }
@@ -333,7 +394,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       }
       if (e.key.toLowerCase() === "r" && elSel?.tipo === "arredo") { cambia(imposta(R.current.testo, elSel.riga, "ruota", String((elSel.ruota + 90) % 360))); return; }
       const a = ATTREZZI.find(x => x[2].toLowerCase() === e.key.toLowerCase());
-      if (a && vista !== "3d") { setStrumento(a[0]); setCatalogo(a[0] === "arredo"); }
+      if (a) { setStrumento(a[0]); setCatalogo(a[0] === "arredo"); }
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
@@ -342,6 +403,66 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const es = useMemo(() => (vediPassaggi ? passaggi(M, piano, mesh) : null), [vediPassaggi, M, piano, mesh]);
   const appunti = useMemo(() => p.appunti.map((a, i) => ({ ...a, n: i + 1 })), [p.appunti]);
   const rie = useMemo(() => (dx === "superfici" ? riepilogo(M) : null), [dx, M]);
+  const sez = useMemo(() => (strumento === "sezione" && taglio ? sezione(M, taglio[0], taglio[1], mesh) : null), [strumento, taglio, M, mesh]);
+  const areaQui = strumento === "area" && misArea && (misArea.piano === piano || vista === "3d") ? misArea.pts : null;
+  useEffect(() => { setP3(null); setCur3(null); }, [strumento]);
+  // il muro che stai tirando in 3D, con il suo spessore (come quando lo tiri in pianta)
+  useEffect(() => {
+    if (strumento !== "muro") return;
+    if (!p3) { traccia.current?.(null); return; }
+    const fine = cur3 && cur3.piano === p3.piano ? aggancia3d(cur3.p, p3.piano, p3.pts[p3.pts.length - 1]) : null;
+    traccia.current?.({ pts: fine ? [...p3.pts, fine] : p3.pts, spessore: opzMuro.spessore, a: hA, b: hB, quota: M.piani.find(x => x.id === p3.piano)?.quota ?? 0 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p3, cur3, strumento]);
+  const disegno3d = useMemo((): Disegno3D | null => {
+    if (vista === "pianta") return null;
+    const Q = (id: string) => M.piani.find(x => x.id === id)?.quota ?? 0, d: Required<Disegno3D> = { linee: [], veli: [], scritte: [] };
+    const giro = (pts: Pt[], z: number) => pts.map(q => [q.x, q.y, z] as [number, number, number]);
+    const centro = (pts: Pt[]) => ({ x: pts.reduce((t, q) => t + q.x, 0) / pts.length, y: pts.reduce((t, q) => t + q.y, 0) / pts.length });
+    const mq = (pts: Pt[]) => `${(Math.abs(area2(pts)) / 1e4).toFixed(2).replace(".", ",")} m²`;
+    if (strumento === "altezza" && alto) {                                   // l'asta dell'altezza libera, dai piedi alla testa
+      const z0 = Q(alto.piano), { p: q, r } = alto, top = r.cima ?? r.base + 300;
+      if (!r.buco) {
+        d.linee.push({ pts: [[q.x, q.y, z0 + r.base], [q.x, q.y, z0 + top]] }, { pts: [[q.x - 12, q.y, z0 + top], [q.x + 12, q.y, z0 + top]] }, { pts: [[q.x - 12, q.y, z0 + r.base], [q.x + 12, q.y, z0 + r.base]] });
+        const L = r.libera, piedi = !r.sotto.startsWith("sopra ");
+        d.scritte.push({ p: [q.x, q.y, z0 + (r.base + top) / 2], testo: L === null ? "aperto" : `${metri(L)} m`, tono: piedi && L !== null && L < 200 ? "basso" : piedi && L !== null && L < 210 ? "giusto" : undefined });
+      } else d.scritte.push({ p: [q.x, q.y, z0 + 20], testo: "buco nel pavimento" });
+    }
+    if (strumento === "area" && misArea && !p3) {
+      const z = Q(misArea.piano) + 3;
+      d.linee.push({ pts: giro(misArea.pts, z), chiusa: true });
+      d.veli.push(giro(misArea.pts, z));
+      const c = centro(misArea.pts);
+      d.scritte.push({ p: [c.x, c.y, z], testo: mq(misArea.pts) });
+    }
+    if (strumento === "sezione" && taglio && sez && !p3) {                    // il piano di taglio, in piedi lungo la linea
+      const [a, b] = taglio, z0 = sez.z0, z1 = sez.z1 + 40;
+      const v: [number, number, number][] = [[a.x, a.y, z0], [b.x, b.y, z0], [b.x, b.y, z1], [a.x, a.y, z1]];
+      d.veli.push(v);
+      d.linee.push({ pts: v, chiusa: true });
+      d.scritte.push({ p: [a.x, a.y, z1], testo: "A" }, { p: [b.x, b.y, z1], testo: "B" });
+    }
+    if (strumento !== "sposta" && strumento !== "foto" && (p3 || cur3)) {   // il disegno in corso fino al mouse
+      const pq = p3?.piano ?? cur3!.piano, z = Q(pq) + 3, pts = p3?.pts ?? [];
+      const fine = cur3 && cur3.piano === pq ? (libero3d || strumento === "porta" || strumento === "finestra" ? cur3.p : aggancia3d(cur3.p, pq, pts[pts.length - 1])) : null;
+      const zc = libero3d && cur3 ? cur3.z : z;
+      if (fine) d.linee.push({ pts: [[fine.x - 15, fine.y, zc], [fine.x + 15, fine.y, zc]] }, { pts: [[fine.x, fine.y - 15, zc], [fine.x, fine.y + 15, zc]] }, { pts: [[fine.x, fine.y, zc], [fine.x, fine.y, zc + 30]] });
+      const catena = fine ? [...pts, fine] : pts;
+      if ((strumento === "stanza" || strumento === "foro" || strumento === "appunto" && modoAppunto === "zona") && catena.length === 2) {
+        const [a, b] = catena, r4 = [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }];
+        d.linee.push({ pts: giro(r4, z), chiusa: true });
+        d.veli.push(giro(r4, z));
+        d.scritte.push({ p: [(a.x + b.x) / 2, (a.y + b.y) / 2, z], testo: `${Math.round(Math.abs(b.x - a.x))} × ${Math.round(Math.abs(b.y - a.y))}` });
+      } else if (catena.length >= 2) {
+        d.linee.push({ pts: giro(catena, z), chiusa: strumento === "area" && catena.length >= 3 });
+        if (strumento === "area" && catena.length >= 3) { d.veli.push(giro(catena, z)); const c = centro(catena); d.scritte.push({ p: [c.x, c.y, z], testo: mq(catena) }); }
+        const a = catena[catena.length - 2], b = catena[catena.length - 1];
+        d.scritte.push({ p: [b.x, b.y, z + 25], testo: `${Math.round(Math.hypot(b.x - a.x, b.y - a.y))} cm` });
+      }
+    }
+    return d;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vista, strumento, alto, misArea, taglio, sez, p3, cur3, M, modoAppunto]);
   const visibili = appunti.filter(a => filtro === "tutti" || a.stato === "da fare").slice().reverse();
   const ultimoClaude = p.attivita.find(a => a.chi === "claude")?.quando;
   const claudeAttivo = !!ultimoClaude && Date.now() - ultimoClaude < 90_000;
@@ -409,6 +530,47 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
     <button className="btn piccolo" onClick={() => setVolo({ tipo: "alto", n: Date.now() })}>Dall&apos;alto</button>
     {vista === "3d" && <button className="btn piccolo" aria-pressed={tetto} onClick={() => setTetto(!tetto)}>Tetto</button>}
   </div>;
+
+  const attrezziUI = <>
+          {strumento === "appunto" && <div className="galleggia" style={{ bottom: 80, left: "50%", transform: "translateX(-50%)" }}>
+            <div className="segmenti vetro">{(["punto", "linea", "zona"] as const).map(m => <button key={m} aria-pressed={modoAppunto === m} onClick={() => setModoAppunto(m)}>{m[0].toUpperCase() + m.slice(1)}</button>)}</div>
+          </div>}
+          {strumento === "altezza" && alto && (alto.piano === piano || vista === "3d") && <Alto r={alto.r} onChiudi={() => setAlto(null)} />}
+          {areaQui && <Misurata pts={areaQui} onChiudi={() => setMisArea(null)} onStanza={() => {
+            nuovaRiga(`stanza "Stanza ${M.el.filter(e => e.tipo === "stanza").length + 1}" ${scriviPunti(areaQui)} pavimento gres`, misArea?.piano);
+            setMisArea(null); mostra("Stanza aggiunta: dalle il suo nome nel testo");
+          }} />}
+          {sez && <VistaSezione s={sez} onInverti={() => setTaglio(t => t && [t[1], t[0]])} onChiudi={() => setTaglio(null)} />}
+          {catalogo && strumento === "arredo" && <Catalogo scelto={cosa} onScegli={k => { setCosa(k); setCatalogo(false); }} />}
+          {strumento === "muro" && <div className="opzioni-muro vetro" role="group" aria-label="Opzioni del muro">
+            <div className="gruppo">
+              <span className="etichetta">Spessore</span>
+              <div className="segmenti">{[10, 20, 30, 40].map(v => <button key={v} type="button" aria-pressed={opzMuro.spessore === v} onClick={() => setOpzMuro(o => ({ ...o, spessore: v }))}>{v}</button>)}</div>
+              <input className="mini" inputMode="numeric" aria-label="Spessore su misura" value={[10, 20, 30, 40].includes(opzMuro.spessore) ? "" : opzMuro.spessore} placeholder="…"
+                onChange={e => { const v = parseFloat(e.target.value); if (v > 0) setOpzMuro(o => ({ ...o, spessore: v })); }} />
+            </div>
+            <div className="gruppo">
+              <span className="etichetta">Altezza</span>
+              <label className="mini-campo">A<input className="mini" inputMode="numeric" placeholder={String(hPiano)} value={opzMuro.a} aria-label="Altezza al punto A"
+                onChange={e => setOpzMuro(o => ({ ...o, a: e.target.value.replace(/[^\d.]/g, "") }))} /></label>
+              <span aria-hidden="true" className="tenue">→</span>
+              <label className="mini-campo">B<input className="mini" inputMode="numeric" placeholder={String(hA)} value={opzMuro.b} aria-label="Altezza al punto B"
+                onChange={e => setOpzMuro(o => ({ ...o, b: e.target.value.replace(/[^\d.]/g, "") }))} /></label>
+              {(opzMuro.a || opzMuro.b) && <button type="button" className="btn piccolo" onClick={() => setOpzMuro(o => ({ ...o, a: "", b: "" }))} title="Torna all'altezza del piano">Del piano</button>}
+            </div>
+            <Profilo a={hA} b={hB} scritte={false} />
+            <p className="aiuto-muro">Clic per ogni angolo · scrivi una misura e Invio per un tratto esatto · Backspace toglie l&apos;ultimo punto · doppio clic per finire</p>
+          </div>}
+          {!bozza && !catalogo && !sez && !(strumento === "altezza" && alto) && !areaQui && AIUTO[strumento] && strumento !== "appunto" && strumento !== "muro" && <div className="suggerimento vetro">{strumento === "arredo" ? `${cosa.replace("_", " ")}: clic dove va il centro` : AIUTO[strumento]}</div>}
+          <nav className="attrezzi vetro" aria-label="Attrezzi">
+            {ATTREZZI.map(([k, nome, tasto]) => (
+              <button key={k} className={k === "appunto" ? "appunto" : undefined} aria-pressed={strumento === k} title={`${nome} (${tasto})`}
+                onClick={() => { setStrumento(k); setCatalogo(k === "arredo" ? !(catalogo && strumento === "arredo") : false); }}>
+                <Ico d={I[k as keyof typeof I]} /><span>{nome}</span>
+              </button>
+            ))}
+          </nav>
+  </>;
 
   return (
     <div className="ed">
@@ -494,52 +656,24 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
           <Pianta modello={M} piano={piano} quote={quote} passaggi={es} modifica strumento={strumento} modoAppunto={modoAppunto} sel={sel} evid={evid}
             appunti={filtro === "tutti" ? appunti : appunti.filter(a => a.stato === "da fare" || a.id === notaSel)} notaSel={notaSel}
             segno={strumento === "altezza" && alto?.piano === piano ? { p: alto.p, testo: alto.r.buco ? "buco" : alto.r.libera === null ? "aperto" : `${metri(alto.r.libera)} m`, basso: (alto.r.libera ?? 999) < 200 && !alto.r.sotto.startsWith("sopra ") } : null} foto={p.foto} fotoAttiva={fotoAttiva} centra={centra} adatta={adatta}
+            area={areaQui} taglio={taglio}
             onSel={scegli} onSposta={posa}
             onVertici={(r, pts) => cambia(impostaPunti(R.current.testo, r, pts))} onDisegna={disegnato}
             muro={{ spessore: opzMuro.spessore, a: hA, b: hB }} onBozza={setInCorso}
             onRuota={(r, gr) => cambia(imposta(R.current.testo, r, "ruota", gr ? String(gr) : null))}
             onTraccia={c => traccia.current?.(c && { pts: c, spessore: opzMuro.spessore, a: hA, b: hB, quota: qPiano })}
             onNota={nid => { setNotaSel(nid); setDx("appunti"); }} onFoto={cambiaFoto} />
-          {strumento === "appunto" && <div className="galleggia" style={{ bottom: 80, left: "50%", transform: "translateX(-50%)" }}>
-            <div className="segmenti vetro">{(["punto", "linea", "zona"] as const).map(m => <button key={m} aria-pressed={modoAppunto === m} onClick={() => setModoAppunto(m)}>{m[0].toUpperCase() + m.slice(1)}</button>)}</div>
-          </div>}
-          {strumento === "altezza" && alto?.piano === piano && <Alto r={alto.r} onChiudi={() => setAlto(null)} />}
-          {catalogo && strumento === "arredo" && <Catalogo scelto={cosa} onScegli={k => { setCosa(k); setCatalogo(false); }} />}
-          {strumento === "muro" && <div className="opzioni-muro vetro" role="group" aria-label="Opzioni del muro">
-            <div className="gruppo">
-              <span className="etichetta">Spessore</span>
-              <div className="segmenti">{[10, 20, 30, 40].map(v => <button key={v} type="button" aria-pressed={opzMuro.spessore === v} onClick={() => setOpzMuro(o => ({ ...o, spessore: v }))}>{v}</button>)}</div>
-              <input className="mini" inputMode="numeric" aria-label="Spessore su misura" value={[10, 20, 30, 40].includes(opzMuro.spessore) ? "" : opzMuro.spessore} placeholder="…"
-                onChange={e => { const v = parseFloat(e.target.value); if (v > 0) setOpzMuro(o => ({ ...o, spessore: v })); }} />
-            </div>
-            <div className="gruppo">
-              <span className="etichetta">Altezza</span>
-              <label className="mini-campo">A<input className="mini" inputMode="numeric" placeholder={String(hPiano)} value={opzMuro.a} aria-label="Altezza al punto A"
-                onChange={e => setOpzMuro(o => ({ ...o, a: e.target.value.replace(/[^\d.]/g, "") }))} /></label>
-              <span aria-hidden="true" className="tenue">→</span>
-              <label className="mini-campo">B<input className="mini" inputMode="numeric" placeholder={String(hA)} value={opzMuro.b} aria-label="Altezza al punto B"
-                onChange={e => setOpzMuro(o => ({ ...o, b: e.target.value.replace(/[^\d.]/g, "") }))} /></label>
-              {(opzMuro.a || opzMuro.b) && <button type="button" className="btn piccolo" onClick={() => setOpzMuro(o => ({ ...o, a: "", b: "" }))} title="Torna all'altezza del piano">Del piano</button>}
-            </div>
-            <Profilo a={hA} b={hB} scritte={false} />
-            <p className="aiuto-muro">Clic per ogni angolo · scrivi una misura e Invio per un tratto esatto · Backspace toglie l&apos;ultimo punto · doppio clic per finire</p>
-          </div>}
-          {!bozza && !catalogo && AIUTO[strumento] && strumento !== "appunto" && strumento !== "muro" && <div className="suggerimento vetro">{strumento === "arredo" ? `${cosa.replace("_", " ")}: clic dove va il centro` : AIUTO[strumento]}</div>}
-          <nav className="attrezzi vetro" aria-label="Attrezzi">
-            {ATTREZZI.map(([k, nome, tasto]) => (
-              <button key={k} className={k === "appunto" ? "appunto" : undefined} aria-pressed={strumento === k} title={`${nome} (${tasto})`}
-                onClick={() => { setStrumento(k); setCatalogo(k === "arredo" ? !(catalogo && strumento === "arredo") : false); }}>
-                <Ico d={I[k as keyof typeof I]} /><span>{nome}</span>
-              </button>
-            ))}
-          </nav>
+          {attrezziUI}
         </section>}
         {vista === "divisa" && <div className="divisore" role="separator" tabIndex={0} aria-label="Sposta la divisione tra pianta e 3D" title="Trascina per dare più spazio alla pianta o al 3D (doppio clic: a metà)"
           aria-valuemin={25} aria-valuemax={75} aria-valuenow={Math.round(parte * 100)} onPointerDown={trascinaDivisore} onKeyDown={tastoDivisore}
           onDoubleClick={() => { setParte(0.5); ricorda("parte", "0.5"); }} />}
         {vista !== "pianta" && <section className="lato lato-3d" aria-label="Vista 3D">
-          <Vista3D modello={M} mesh={mesh} piano={piano} tetto={tetto} nomi volo={volo} onStanza={r => { setVolo({ tipo: "stanza", riga: r, n: Date.now() }); scegli(r); }} traccia={traccia} sel={sel} onSel={scegli} onPosa={posa} />
-          {vista === "divisa" && <div className="galleggia comandi-3d">{comandi3D}</div>}
+          <Vista3D modello={M} mesh={mesh} piano={piano} tetto={tetto} nomi={strumento === "sposta"} volo={volo} onStanza={r => { setVolo({ tipo: "stanza", riga: r, n: Date.now() }); scegli(r); }} traccia={traccia} sel={sel} onSel={scegli} onPosa={posa}
+            onPunto={strumento !== "sposta" && strumento !== "foto" ? punto3d : undefined} onCursore={setCur3} disegno={disegno3d}
+            fisso={p3?.pts.length ? { piano: p3.piano, quota: M.piani.find(x => x.id === p3.piano)?.quota ?? 0 } : null} />
+          {vista === "divisa" && strumento === "sposta" && <div className="galleggia comandi-3d">{comandi3D}</div>}
+          {vista === "3d" && <div className="in3d" style={{ display: "contents" }}>{attrezziUI}</div>}
         </section>}
         <div className="galleggia alto">
           <div className="segmenti vetro" role="group" aria-label="Piano">

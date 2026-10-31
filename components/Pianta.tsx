@@ -4,12 +4,12 @@
 // Muro: clic per gli angoli, scrivi una misura e Invio per un tratto esatto, Backspace o tasto destro toglie l'ultimo punto.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ancora } from "@/lib/ancora";
-import { distSeg, segmenti, type Arredo, type Modello, type Muro, type Pt } from "@/lib/lingua";
+import { area2, distSeg, lati, segmenti, type Arredo, type Modello, type Muro, type Pt } from "@/lib/lingua";
 import type { Esito } from "@/lib/passaggi";
 import { contorno, disegnaPianta, riquadro } from "@/lib/pianta";
 import type { Appunto, Foto } from "@/lib/progetti";
 
-export type Strumento = "sposta" | "muro" | "stanza" | "foro" | "porta" | "finestra" | "arredo" | "misura" | "appunto" | "calibra" | "foto" | "commento" | "altezza";
+export type Strumento = "sposta" | "muro" | "stanza" | "foro" | "porta" | "finestra" | "arredo" | "misura" | "appunto" | "calibra" | "foto" | "commento" | "altezza" | "sezione" | "area";
 export type OpzMuro = { spessore: number; a: number; b: number };
 type Props = {
   modello: Modello; piano: string; quote?: boolean; passaggi?: Esito | null; modifica?: boolean;
@@ -17,6 +17,8 @@ type Props = {
   sel?: number | null; evid?: number[]; appunti?: (Appunto & { n: number })[]; notaSel?: string | null;
   /** Il punto dove si è misurata l'altezza libera, con la misura da scriverci sopra. */
   segno?: { p: Pt; testo: string; basso: boolean } | null;
+  /** L'area misurata (poligono chiuso) e la linea della sezione, da lasciare disegnate. */
+  area?: Pt[] | null; taglio?: [Pt, Pt] | null;
   foto?: Foto[]; fotoAttiva?: string | null; centra?: { p: Pt; n: number }; adatta?: number;
   onSel?: (riga: number | null) => void; onSposta?: (riga: number, dx: number, dy: number, ruota?: number) => void;
   onVertici?: (riga: number, punti: Pt[]) => void; onDisegna?: (cosa: Strumento, punti: Pt[]) => void;
@@ -28,6 +30,8 @@ type Presa = { p: Pt; tipo: "vertice" | "linea" | "griglia"; gx?: Pt; gy?: Pt };
 const COL = (a: Appunto) => (a.stato === "fatta" ? "var(--fatta)" : a.da === "cliente" ? "var(--cliente)" : a.da === "claude" ? "var(--claude)" : "var(--nota)");
 const SCALE = [10, 20, 50, 100, 200, 500, 1000, 2000];
 const r1 = (n: number) => Math.round(n * 10) / 10;
+const mq = (pts: Pt[]) => (Math.abs(area2(pts)) / 1e4).toFixed(2).replace(".", ",");
+const baricentro = (pts: Pt[]): Pt => ({ x: pts.reduce((t, q) => t + q.x, 0) / pts.length, y: pts.reduce((t, q) => t + q.y, 0) / pts.length });
 
 /** Nastro di un tratto di muro con il suo spessore (allungato di mezzo spessore ai capi, come in pianta). */
 function nastro(a: Pt, b: Pt, t: number): Pt[] {
@@ -83,6 +87,8 @@ export default function Pianta(p: Props) {
   }, [pts, fineMuro?.x, fineMuro?.y, strumento, p.onTraccia, p.muro?.a, p.muro?.b, p.muro?.spessore]);
 
   const vista = v ?? { cx: 500, cy: 400, k: 0.8 };
+  const poligono = strumento === "muro" || strumento === "area";        // si disegna a clic, un angolo dopo l'altro
+  const prima = poligono || strumento === "sezione" ? pts[pts.length - 1] : undefined;   // per tirare dritto dall'ultimo punto
   const vb = { x: vista.cx - dim.w / 2 / vista.k, y: vista.cy - dim.h / 2 / vista.k, w: dim.w / vista.k, h: dim.h / vista.k };
   const inPianta = (e: { clientX: number; clientY: number }): Pt => {
     const r = svg.current!.getBoundingClientRect();
@@ -94,7 +100,8 @@ export default function Pianta(p: Props) {
   const aggancia = (q: Pt, fine: boolean, prima?: Pt): Presa => {
     const r = 12 / vista.k;
     let best: Pt | null = null, bd = r;
-    for (const w of vertici) { const d = Math.hypot(w.x - q.x, w.y - q.y); if (d < bd) { bd = d; best = w; } }
+    const cand = pts.length > 1 ? [...vertici, ...pts.slice(0, -1)] : vertici;   // anche i punti già messi: per chiudere
+    for (const w of cand) { const d = Math.hypot(w.x - q.x, w.y - q.y); if (d < bd) { bd = d; best = w; } }
     if (best) return { p: best, tipo: "vertice" };
     bd = r * 0.8;
     for (const { s: [a, b] } of tratti) {
@@ -112,7 +119,7 @@ export default function Pianta(p: Props) {
       const dx = s.x - prima.x, dy = s.y - prima.y;
       if (Math.abs(dx) < Math.abs(dy) * 0.18) { s.x = prima.x; fx = true; } else if (Math.abs(dy) < Math.abs(dx) * 0.18) { s.y = prima.y; fy = true; }
     }
-    for (const w of vertici) {                                          // allineato a un angolo esistente
+    for (const w of cand) {                                             // allineato a un angolo esistente
       if (!fx && Math.abs(w.x - q.x) < r * 0.7 && (!gx || Math.abs(w.y - q.y) < Math.abs(gx.y - q.y))) { s.x = w.x; gx = w; }
       if (!fy && Math.abs(w.y - q.y) < r * 0.7 && (!gy || Math.abs(w.x - q.x) < Math.abs(gy.x - q.x))) { s.y = w.y; gy = w; }
     }
@@ -122,8 +129,8 @@ export default function Pianta(p: Props) {
   // tastiera durante il disegno del muro: misure, Invio, Backspace, Esc
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select") || !pts.length || (strumento !== "muro" && strumento !== "misura")) return;
-      if (/^[0-9.,]$/.test(e.key) && strumento === "muro") { e.preventDefault(); setDig(d => (d + (e.key === "," ? "." : e.key)).slice(0, 7)); return; }
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select") || !pts.length || (!poligono && strumento !== "misura")) return;
+      if (/^[0-9.,]$/.test(e.key) && poligono) { e.preventDefault(); setDig(d => (d + (e.key === "," ? "." : e.key)).slice(0, 7)); return; }
       if (e.key === "Backspace") { e.preventDefault(); if (dig) setDig(d => d.slice(0, -1)); else setPts(x => x.slice(0, -1)); return; }
       if (e.key === "Escape") { e.preventDefault(); if (dig) setDig(""); else setPts([]); return; }
       if (e.key !== "Enter") return;
@@ -134,7 +141,7 @@ export default function Pianta(p: Props) {
         const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
         setPts([...pts, { x: r1(a.x + ((b.x - a.x) / d) * L), y: r1(a.y + ((b.y - a.y) / d) * L) }]);
         setDig("");
-      } else if (strumento === "muro") { if (pts.length >= 2) p.onDisegna?.("muro", pts); setPts([]); }
+      } else if (poligono) { if (pts.length >= (strumento === "area" ? 3 : 2)) p.onDisegna?.(strumento, pts); setPts([]); }
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
@@ -149,7 +156,7 @@ export default function Pianta(p: Props) {
   const arredoSel = selEl?.tipo === "arredo" ? (selEl as Arredo) : undefined;
 
   function giu(e: React.PointerEvent<SVGSVGElement>) {
-    if (strumento === "muro" && e.button === 2 && pts.length) { setPts(x => x.slice(0, -1)); setDig(""); return; }   // tasto destro: indietro di un punto
+    if (poligono && e.button === 2 && pts.length) { setPts(x => x.slice(0, -1)); setDig(""); return; }   // tasto destro: indietro di un punto
     try { svg.current!.setPointerCapture(e.pointerId); } catch { /* puntatore già rilasciato */ }
     dita.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const q = inPianta(e), t = e.target as Element;
@@ -179,7 +186,7 @@ export default function Pianta(p: Props) {
       g.current = { ...base, tipo: "pan" };
       return;
     }
-    const s = aggancia(q, e.altKey, strumento === "muro" ? pts[pts.length - 1] : undefined).p;
+    const s = aggancia(q, e.altKey, prima).p;
     if (strumento === "stanza" || strumento === "foro" || (strumento === "appunto" && p.modoAppunto !== "punto")) { g.current = { ...base, tipo: "rettangolo" }; setPts([s, s]); return; }
     g.current = { ...base, tipo: "clic" };
   }
@@ -189,7 +196,7 @@ export default function Pianta(p: Props) {
     setPos(q);
     if (dita.current.has(e.pointerId)) dita.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const G = g.current;
-    if (strumento !== "sposta" && strumento !== "foto") setCur(aggancia(q, e.altKey, strumento === "muro" ? pts[pts.length - 1] : undefined));
+    if (strumento !== "sposta" && strumento !== "foto") setCur(aggancia(q, e.altKey, prima));
     if (!G) return;
     if (Math.hypot(e.clientX - G.x0, e.clientY - G.y0) > 4) G.mosso = true;
     if (G.tipo === "pinch" && dita.current.size === 2) {
@@ -243,18 +250,18 @@ export default function Pianta(p: Props) {
         p.onDisegna?.(strumento, [a, b]);
     }
     if (G.tipo === "clic" && !G.mosso) {
-      const s = aggancia(q, e.altKey, strumento === "muro" ? pts[pts.length - 1] : undefined).p;
+      const s = aggancia(q, e.altKey, prima).p;
       const doppio = e.timeStamp - ultimo.current.t < 350 && Math.hypot(e.clientX - ultimo.current.x, e.clientY - ultimo.current.y) < 8;
       ultimo.current = { t: e.timeStamp, x: e.clientX, y: e.clientY };
-      if (strumento === "muro") {
+      if (poligono) {
         setDig("");
         const chiude = pts.length >= 2 && Math.hypot(s.x - pts[0].x, s.y - pts[0].y) < 1;
-        if (doppio || chiude) {
+        if ((doppio || chiude) && pts.length) {
           const fin = [...pts, ...(Math.hypot(s.x - pts[pts.length - 1].x, s.y - pts[pts.length - 1].y) > 1 ? [s] : [])];
-          if (fin.length >= 2) p.onDisegna?.("muro", fin);
+          if (fin.length >= (strumento === "area" ? 3 : 2)) p.onDisegna?.(strumento, fin);
           setPts([]);
         } else setPts([...pts, s]);
-      } else if (strumento === "misura" || strumento === "calibra") {
+      } else if (strumento === "misura" || strumento === "calibra" || strumento === "sezione") {
         if (pts.length) { p.onDisegna?.(strumento, [pts[0], s]); setPts([]); } else setPts([s]);
       } else p.onDisegna?.(strumento, [strumento === "commento" || strumento === "appunto" || strumento === "altezza" ? q : s]);
     }
@@ -362,6 +369,34 @@ export default function Pianta(p: Props) {
           <circle cx={p.segno.p.x} cy={p.segno.p.y} r={px(5)} style={{ fill: p.segno.basso ? "#d9480f" : "var(--accent)", stroke: "var(--panel)", strokeWidth: 2, vectorEffect: "non-scaling-stroke" }} />
           {etichettaPx(p.segno.p.x, p.segno.p.y - px(26), p.segno.testo, p.segno.basso ? "#d9480f" : undefined)}
         </g>}
+        {strumento === "area" && ultimoP && (() => {                    // l'area che stai chiudendo, con la superficie dentro
+          const catena = [...pts, ...(cur && !dig ? [cur.p] : [])], c = baricentro(catena);
+          return <g pointerEvents="none">
+            <polygon points={poly(catena)} className="bozza" />
+            {pts.map((q, i) => <circle key={i} cx={q.x} cy={q.y} r={px(4)} className="nodo" />)}
+            {catena.length >= 3 && etichettaPx(c.x, c.y, `${mq(catena)} m²`)}
+          </g>;
+        })()}
+        {p.area && strumento === "area" && !pts.length && (() => {
+          const c = baricentro(p.area);
+          return <g pointerEvents="none" className="area-misurata">
+            <polygon points={poly(p.area)} />
+            {lati(p.area).map(([a, b], i) => <g key={i}>{etichettaPx((a.x + b.x) / 2, (a.y + b.y) / 2, String(Math.round(Math.hypot(b.x - a.x, b.y - a.y))), "var(--muted)")}</g>)}
+            {etichettaPx(c.x, c.y, `${mq(p.area)} m²`)}
+          </g>;
+        })()}
+        {p.taglio && strumento === "sezione" && !pts.length && (() => {          // la linea della sezione: A, B e verso dove si guarda
+          const [a, b] = p.taglio, L = Math.hypot(b.x - a.x, b.y - a.y) || 1, u = { x: (b.x - a.x) / L, y: (b.y - a.y) / L }, g = { x: u.y, y: -u.x }, f = px(20);
+          return <g pointerEvents="none" className="taglio">
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+            {[a, b].map((q, i) => <g key={i}>
+              <line x1={q.x} y1={q.y} x2={q.x + g.x * f} y2={q.y + g.y * f} className="verso" />
+              <polygon points={poly([{ x: q.x + g.x * (f + px(9)), y: q.y + g.y * (f + px(9)) }, { x: q.x + g.x * f + u.x * px(5), y: q.y + g.y * f + u.y * px(5) }, { x: q.x + g.x * f - u.x * px(5), y: q.y + g.y * f - u.y * px(5) }])} />
+            </g>)}
+            {etichettaPx(a.x - u.x * px(18), a.y - u.y * px(18), "A")}
+            {etichettaPx(b.x + u.x * px(18), b.y + u.y * px(18), "B")}
+          </g>;
+        })()}
         {strumento === "muro" && ultimoP && (() => {                    // il muro che stai tirando, con il suo spessore
           const fine = cur && !dig ? cur.p : null, catena = [...pts, ...(fine ? [fine] : [])];
           return <g pointerEvents="none">
@@ -374,7 +409,7 @@ export default function Pianta(p: Props) {
             </>}
           </g>;
         })()}
-        {pts.length > 0 && strumento !== "muro" && (strumento === "misura" || strumento === "calibra" || p.modoAppunto === "linea" ? <polyline points={poly([pts[0], pts[1] ?? cur?.p ?? pts[0]])} className="bozza" />
+        {pts.length > 0 && !poligono && (strumento === "misura" || strumento === "calibra" || strumento === "sezione" || p.modoAppunto === "linea" ? <polyline points={poly([pts[0], pts[1] ?? cur?.p ?? pts[0]])} className="bozza" />
           : pts[1] && <rect x={Math.min(pts[0].x, pts[1].x)} y={Math.min(pts[0].y, pts[1].y)} width={Math.abs(pts[1].x - pts[0].x)} height={Math.abs(pts[1].y - pts[0].y)} className="bozza" />)}
         {pts.length > 0 && pts[1] && (strumento === "stanza" || strumento === "foro") && etichettaPx((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2, `${Math.abs(pts[1].x - pts[0].x)} × ${Math.abs(pts[1].y - pts[0].y)}`)}
         {disegnando && cur && <g pointerEvents="none">
@@ -384,7 +419,7 @@ export default function Pianta(p: Props) {
             : cur.tipo === "linea" ? <rect x={cur.p.x - px(5)} y={cur.p.y - px(5)} width={px(10)} height={px(10)} className="presa" transform={`rotate(45 ${cur.p.x} ${cur.p.y})`} />
               : <circle cx={cur.p.x} cy={cur.p.y} r={px(4)} style={{ fill: "var(--accent)" }} />}
         </g>}
-        {disegnando && ultimoP && (strumento === "muro" || strumento === "misura" || strumento === "calibra") && (dig || cur) &&
+        {disegnando && ultimoP && (poligono || strumento === "misura" || strumento === "calibra" || strumento === "sezione") && (dig || cur) &&
           etichettaPx((cur?.p ?? ultimoP).x + px(dig ? 0 : 34), (cur?.p ?? ultimoP).y - px(dig ? 26 : 16), dig ? `${dig}▍ cm` : (() => {
             const dx = cur!.p.x - ultimoP.x, dy = cur!.p.y - ultimoP.y, gr = Math.round(((Math.atan2(-dy, dx) * 180) / Math.PI + 360) % 360);   // storto: anche l'angolo
             return `${Math.round(Math.hypot(dx, dy))} cm` + (gr % 90 && Math.hypot(dx, dy) > 1 ? ` · ${gr}°` : "");

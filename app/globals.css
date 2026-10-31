@@ -427,3 +427,32 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6
 .abaco td { padding: 5px 0; border-top: 1px solid var(--line); vertical-align: top; }
 .abaco td:not(:first-child) { text-align: right; padding-left: 10px; white-space: nowrap; }
 .abaco small { display: block; color: var(--muted); font-size: 12px; }
+
+/* sezione verticale e area misurata */
+.sezione-scheda { position: absolute; z-index: 6; left: 16px; right: 16px; bottom: 82px; max-width: 980px; margin: 0 auto; display: grid; gap: 6px; padding: 10px 12px 8px; border-radius: 14px; }
+.sezione-scheda header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sezione-svg { display: block; width: 100%; height: clamp(180px, 46vh, 480px); }
+.sezione-svg text { fill: var(--fg); font-family: var(--ui); }
+.sez-solaio, .sez-muro, .sez-tetto { fill: var(--p-muro); }
+.sez-scala { fill: var(--muted); }
+.sez-arredo { fill: var(--chip); stroke: var(--p-bordo); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.sez-vetro { fill: rgba(37, 87, 167, 0.16); stroke: var(--accent); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.sez-taglio { fill: none; stroke: var(--p-muro); stroke-width: 1.4px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.sez-piano line { stroke: var(--p-bordo); stroke-width: 1px; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.sez-piano text { fill: var(--muted); }
+.sez-nome { fill: var(--muted) !important; }
+.sez-capo { font-weight: 700; }
+.sez-quota line { stroke: var(--accent); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.sez-quota rect { fill: var(--accent); }
+.sezione-svg .sez-quota text { fill: var(--accent-ink); font-weight: 600; }
+.sez-quota.giusto line { stroke: #b7791f; } .sez-quota.giusto rect { fill: #b7791f; }
+.sez-quota.basso line { stroke: #c2410c; } .sez-quota.basso rect { fill: #c2410c; }
+.sezione-svg .sez-quota.giusto text, .sezione-svg .sez-quota.basso text { fill: #fff; }
+.taglio line { stroke: var(--accent); stroke-width: 2px; stroke-dasharray: 12 4 2 4; vector-effect: non-scaling-stroke; }
+.taglio line.verso { stroke-dasharray: none; }
+.taglio polygon { fill: var(--accent); }
+.area-misurata polygon { fill: rgba(37, 87, 167, 0.1); stroke: var(--accent); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.segno3d { position: absolute; left: 0; top: 0; z-index: 2; font: 600 12px/1 var(--ui); color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 4px 9px; white-space: nowrap; will-change: transform; pointer-events: none; }
+.segno3d.giusto { background: #b7791f; color: #fff; }
+.segno3d.basso { background: #c2410c; color: #fff; }
+.in3d .alto-scheda { top: auto; right: auto; left: 16px; bottom: 96px; }
