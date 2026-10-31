@@ -6,7 +6,7 @@ import { passaggi, testoPassaggi } from "./passaggi.ts";
 import { muroInCorso } from "./scena.ts";
 import { ancora } from "./ancora.ts";
 import { riepilogo, uso } from "./verifiche.ts";
-import { altezzaLibera } from "./altezza.ts";
+import { altezzaLibera, profiloAltezza } from "./altezza.ts";
 import { sezione } from "./sezione.ts";
 import { descriviScala } from "./scala.ts";
 
@@ -149,4 +149,8 @@ const sz = sezione(M, { x: 690, y: -20 }, { x: 690, y: 820 });
 assert.equal(sz.quote.find(q => !q.scala && Math.round(q.s) === 215)?.libera, 280);
 assert.deepEqual(sz.pezzi.filter(p => p.cosa === "solaio" && p.p[0][1] === 280).map(p => [p.p[0][0], Math.round(p.p[1][0])]), [[35, 496]]);
 assert.ok(sz.pezzi.filter(p => p.cosa === "scala").length >= 5 && sz.pezzi.some(p => p.cosa === "tetto"));
+// profilo lungo una linea: in soggiorno sempre 2,80 m, un campione ogni 5 cm
+const pf = profiloAltezza(M, "terra", { x: 300, y: 300 }, { x: 300, y: 450 });
+assert.equal(pf.punti.length, 31);
+assert.ok(pf.punti.every(c => c.libera === 280 && c.piedi));
 console.log("lingua ok");

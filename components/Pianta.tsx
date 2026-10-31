@@ -19,6 +19,8 @@ type Props = {
   segno?: { p: Pt; testo: string; basso: boolean } | null;
   /** L'area misurata (poligono chiuso) e la linea della sezione, da lasciare disegnate. */
   area?: Pt[] | null; taglio?: [Pt, Pt] | null;
+  /** Altezza lungo una linea: si traccia con due clic; poi la linea resta, con il punto che guardi sul grafico (s cm da A). */
+  altezzaLinea?: boolean; profilo?: { a: Pt; b: Pt; s: number | null; L: number } | null;
   foto?: Foto[]; fotoAttiva?: string | null; centra?: { p: Pt; n: number }; adatta?: number;
   onSel?: (riga: number | null) => void; onSposta?: (riga: number, dx: number, dy: number, ruota?: number) => void;
   onVertici?: (riga: number, punti: Pt[]) => void; onDisegna?: (cosa: Strumento, punti: Pt[]) => void;
@@ -88,6 +90,7 @@ export default function Pianta(p: Props) {
 
   const vista = v ?? { cx: 500, cy: 400, k: 0.8 };
   const poligono = strumento === "muro" || strumento === "area";        // si disegna a clic, un angolo dopo l'altro
+  const dueClic = strumento === "misura" || strumento === "calibra" || strumento === "sezione" || (strumento === "altezza" && !!p.altezzaLinea);
   const prima = poligono || strumento === "sezione" ? pts[pts.length - 1] : undefined;   // per tirare dritto dall'ultimo punto
   const vb = { x: vista.cx - dim.w / 2 / vista.k, y: vista.cy - dim.h / 2 / vista.k, w: dim.w / vista.k, h: dim.h / vista.k };
   const inPianta = (e: { clientX: number; clientY: number }): Pt => {
@@ -261,7 +264,7 @@ export default function Pianta(p: Props) {
           if (fin.length >= (strumento === "area" ? 3 : 2)) p.onDisegna?.(strumento, fin);
           setPts([]);
         } else setPts([...pts, s]);
-      } else if (strumento === "misura" || strumento === "calibra" || strumento === "sezione") {
+      } else if (dueClic) {
         if (pts.length) { p.onDisegna?.(strumento, [pts[0], s]); setPts([]); } else setPts([s]);
       } else p.onDisegna?.(strumento, [strumento === "commento" || strumento === "appunto" || strumento === "altezza" ? q : s]);
     }
@@ -385,6 +388,15 @@ export default function Pianta(p: Props) {
             {etichettaPx(c.x, c.y, `${mq(p.area)} m²`)}
           </g>;
         })()}
+        {p.profilo && !pts.length && (() => {                              // la linea del profilo d'altezza e il punto che guardi sul grafico
+          const { a, b, s, L } = p.profilo, q = s === null ? null : { x: a.x + ((b.x - a.x) * s) / L, y: a.y + ((b.y - a.y) * s) / L }, u = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+          return <g pointerEvents="none" className="profilo-linea">
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+            {q && <circle cx={q.x} cy={q.y} r={px(6)} />}
+            {etichettaPx(a.x - u.x * px(18), a.y - u.y * px(18), "A")}
+            {etichettaPx(b.x + u.x * px(18), b.y + u.y * px(18), "B")}
+          </g>;
+        })()}
         {p.taglio && strumento === "sezione" && !pts.length && (() => {          // la linea della sezione: A, B e verso dove si guarda
           const [a, b] = p.taglio, L = Math.hypot(b.x - a.x, b.y - a.y) || 1, u = { x: (b.x - a.x) / L, y: (b.y - a.y) / L }, g = { x: u.y, y: -u.x }, f = px(20);
           return <g pointerEvents="none" className="taglio">
@@ -409,7 +421,7 @@ export default function Pianta(p: Props) {
             </>}
           </g>;
         })()}
-        {pts.length > 0 && !poligono && (strumento === "misura" || strumento === "calibra" || strumento === "sezione" || p.modoAppunto === "linea" ? <polyline points={poly([pts[0], pts[1] ?? cur?.p ?? pts[0]])} className="bozza" />
+        {pts.length > 0 && !poligono && (dueClic || p.modoAppunto === "linea" ? <polyline points={poly([pts[0], pts[1] ?? cur?.p ?? pts[0]])} className="bozza" />
           : pts[1] && <rect x={Math.min(pts[0].x, pts[1].x)} y={Math.min(pts[0].y, pts[1].y)} width={Math.abs(pts[1].x - pts[0].x)} height={Math.abs(pts[1].y - pts[0].y)} className="bozza" />)}
         {pts.length > 0 && pts[1] && (strumento === "stanza" || strumento === "foro") && etichettaPx((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2, `${Math.abs(pts[1].x - pts[0].x)} × ${Math.abs(pts[1].y - pts[0].y)}`)}
         {disegnando && cur && <g pointerEvents="none">
@@ -419,7 +431,7 @@ export default function Pianta(p: Props) {
             : cur.tipo === "linea" ? <rect x={cur.p.x - px(5)} y={cur.p.y - px(5)} width={px(10)} height={px(10)} className="presa" transform={`rotate(45 ${cur.p.x} ${cur.p.y})`} />
               : <circle cx={cur.p.x} cy={cur.p.y} r={px(4)} style={{ fill: "var(--accent)" }} />}
         </g>}
-        {disegnando && ultimoP && (poligono || strumento === "misura" || strumento === "calibra" || strumento === "sezione") && (dig || cur) &&
+        {disegnando && ultimoP && (poligono || dueClic) && (dig || cur) &&
           etichettaPx((cur?.p ?? ultimoP).x + px(dig ? 0 : 34), (cur?.p ?? ultimoP).y - px(dig ? 26 : 16), dig ? `${dig}▍ cm` : (() => {
             const dx = cur!.p.x - ultimoP.x, dy = cur!.p.y - ultimoP.y, gr = Math.round(((Math.atan2(-dy, dx) * 180) / Math.PI + 360) % 360);   // storto: anche l'angolo
             return `${Math.round(Math.hypot(dx, dy))} cm` + (gr % 90 && Math.hypot(dx, dy) > 1 ? ` · ${gr}°` : "");

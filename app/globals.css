@@ -456,3 +456,25 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6
 .segno3d.giusto { background: #b7791f; color: #fff; }
 .segno3d.basso { background: #c2410c; color: #fff; }
 .in3d .alto-scheda { top: auto; right: auto; left: 16px; bottom: 96px; }
+
+/* altezza lungo una linea */
+.profilo-scheda { bottom: 128px; }
+.profilo-svg { display: block; width: 100%; touch-action: none; cursor: crosshair; }
+.profilo-svg text { fill: var(--muted); font: 500 11px var(--ui); }
+.profilo-svg .pf-capo { fill: var(--fg); font-weight: 700; }
+.pf-griglia { stroke: var(--line); stroke-width: 1px; }
+.pf-vuoto { fill: var(--chip); }
+.pf-area { fill: var(--accent); fill-opacity: 0.12; }
+.pf-soglia { stroke-width: 1px; stroke-dasharray: 5 4; }
+.pf-soglia.basso { stroke: #c2410c; } .pf-soglia.giusto { stroke: #b7791f; }
+.pf-linea { stroke-width: 2.5px; stroke-linecap: round; }
+.pf-linea.ok { stroke: var(--accent); } .pf-linea.giusto { stroke: #b7791f; } .pf-linea.basso { stroke: #c2410c; }
+.pf-linea.grigio { stroke: var(--muted); stroke-dasharray: 3 3; }
+.pf-min circle, .pf-qui circle { stroke: var(--panel); stroke-width: 2px; }
+.pf-min.ok circle, .pf-qui circle.ok { fill: var(--accent); } .pf-min.giusto circle, .pf-qui circle.giusto { fill: #b7791f; }
+.pf-min.basso circle, .pf-qui circle.basso { fill: #c2410c; } .pf-min.grigio circle, .pf-qui circle.grigio { fill: var(--muted); }
+.profilo-svg .pf-min text { fill: var(--fg); font-weight: 700; }
+.pf-qui line { stroke: var(--fg); stroke-width: 1px; stroke-dasharray: 2 3; }
+.profilo-info { margin: 0; font-size: 13px; line-height: 1.4; }
+.profilo-linea line { stroke: var(--accent); stroke-width: 3px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.profilo-linea circle { fill: var(--accent); stroke: var(--panel); stroke-width: 2px; vector-effect: non-scaling-stroke; }
