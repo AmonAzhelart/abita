@@ -104,11 +104,11 @@ export function sezione(M: Modello, A: Pt, B: Pt, mesh: Triangoli = {}): Sezione
     for (const a of el) {
       if (a.tipo !== "arredo") continue;
       const z0 = P.quota + a.quota;
-      if (a.scala) {                                             // pieni fino a terra come in 3D; la chiocciola ha solo le pedate
+      if (a.scala) {                                             // pieni fino a terra (o fino alla soletta) come in 3D; la chiocciola ha solo le pedate
         const elica = a.scala.forma === "chiocciola";
         let min: Quota | null = null;
         for (const g of a.scala.gradini) for (const [s0, s1] of dentroA(g.poli.map(q => locale(a, q.x, q.y)))) {
-          pezzi.push(rett("scala", s0, s1, elica ? z0 + g.z - 5 : z0, z0 + g.z));
+          pezzi.push(rett("scala", s0, s1, elica ? z0 + g.z - 5 : z0 + (g.sotto ?? 0), z0 + g.z));
           min = piuBasso(min, alto(P, (s0 + s1) / 2));
         }
         if (min) quote.push(min);

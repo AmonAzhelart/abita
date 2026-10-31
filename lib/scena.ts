@@ -129,11 +129,11 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
           if (!arr) dove.set(k, (arr = []));
           for (const x of out) arr.push(x);
         }
-      } else if (a.scala) {                                // pieni fino a terra con la pedata sopra; la chiocciola ha solo le pedate e il palo
+      } else if (a.scala) {                                // pieni fino a terra (o fino alla soletta) con la pedata sopra; la chiocciola ha solo le pedate e il palo
         const z0 = P.quota + a.quota, elica = a.scala.forma === "chiocciola";
         for (const g of a.scala.gradini) {
           const pts = g.poli.map(q => locale(a, q.x, q.y));
-          if (!elica) prisma(b, "intonaco", pts, z0, z0 + g.z - 3);
+          if (!elica) prisma(b, "intonaco", pts, z0 + (g.sotto ?? 0), z0 + g.z - 3);
           prisma(b, a.colore, pts, z0 + g.z - (elica ? 5 : 3), z0 + g.z);
         }
         if (elica) cilindro(b, "acciaio", a.a.x, a.a.y, z0, 14, a.H + 95);

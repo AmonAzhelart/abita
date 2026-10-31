@@ -91,9 +91,11 @@ scala U ventaglio pozzo 20 a 500,500              # a U con la svolta tutta a ve
 scala pianerottolo prima 8 a 300,400              # dritta, pianerottolo dopo 8 gradini
 scala chiocciola 160 a 200,200                    # a chiocciola, diametro 160
 scala L alzata 18 pedata 27 larga 100 a 400,300   # alzata e pedata scelte da te
+scala U larga 80 seconda 90 pozzo 15 soletta a 580,1480   # prima rampa 80, seconda 90; sotto resta il vuoto
 \`\`\`
 - \`forma\` dritta (di serie), \`L\`, \`U\` o \`chiocciola\` (si può scrivere anche subito dopo \`scala\`).
-- \`larga\`: larghezza della rampa (di serie 100; per la chiocciola il diametro si scrive come misura, di serie 160).
+- \`larga\`: larghezza della rampa (di serie 100; per la chiocciola il diametro si scrive come misura, di serie 160). \`seconda\`: per L e U, la larghezza della seconda rampa se è diversa dalla prima (il pianerottolo a U è profondo quanto la rampa più larga).
+- \`soletta\`: la scala è una soletta a gradoni spessa 20 cm e sotto resta il vuoto, per un ripostiglio, un mobile o una nicchia (di serie è piena fino a terra).
 - \`alzata\`: quella che vorresti (di serie 17,5; 20 per la chiocciola). Il numero di alzate è dislivello / alzata arrotondato, poi l'alzata vera viene giusta.
 - \`pedata\`: di serie dalla regola di Blondel, 2 alzate + pedata = 63 cm. Per la chiocciola è la pedata sulla linea di passo.
 - \`giro sx\` o \`giro dx\` (di serie): da che parte gira salendo. \`ventaglio\`: gradini a ventaglio nella svolta. \`pianerottolo\`: per la dritta, spezza la rampa. \`prima\`: quanti gradini prima della svolta. \`pozzo\`: il vuoto tra le rampe a U (di serie 10).

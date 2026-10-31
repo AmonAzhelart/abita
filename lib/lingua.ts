@@ -33,9 +33,9 @@ const PASSO = /^([<>^v])(\d+(?:\.\d+)?)$/;
 const MIS = /^\d+(?:\.\d+)?(?:x\d+(?:\.\d+)?){0,2}$/;
 
 const PAR_NUM: Record<string, string> = { spessore: "spessore", altezza: "altezza", alto: "altezza", alta: "altezza", quota: "quota", solaio: "solaio", ruota: "ruota", davanzale: "davanzale", sporto: "sporto", falde: "falde", fino: "fino",
-  larga: "larga", larghezza: "larga", alzata: "alzata", pedata: "pedata", prima: "prima", pozzo: "pozzo" };
+  larga: "larga", larghezza: "larga", seconda: "seconda", alzata: "alzata", pedata: "pedata", prima: "prima", pozzo: "pozzo" };
 const PAR_PAROLA: Record<string, string> = { colore: "colore", materiale: "colore", pavimento: "colore", verso: "verso", cardine: "cardine", colmo: "colmo", forma: "forma", giro: "giro" };
-const FLAG = new Set(["chiudi", "chiuso", "scorrevole", "piano", "copertura", "calpestabile", "ventaglio", "pianerottolo"]);
+const FLAG = new Set(["chiudi", "chiuso", "scorrevole", "piano", "copertura", "calpestabile", "ventaglio", "pianerottolo", "soletta"]);
 export const APERTURE: Record<string, [number, number, number]> = { porta: [80, 210, 0], finestra: [120, 140, 90], portafinestra: [140, 240, 0], varco: [90, 210, 0] };
 const ALIAS: Record<string, string> = {
   livello: "piano", locale: "stanza", vano: "stanza", terrazza: "area", prato: "giardino", apertura: "varco",
@@ -222,7 +222,7 @@ export function leggi(testo: string, modelli: Record<string, ModelloInfo> = {}):
         if (!forma && A.nome && /^(dritta|l|u|chiocciola)$/i.test(A.nome) && !toks.some(t => t.q)) { forma = A.nome.toLowerCase(); ar.nome = ""; }   // "scala U a …"
         if (forma && !(forma in FORME)) err.push({ riga: i, msg: `forma "${forma}": scrivi dritta, L, U o chiocciola` });
         if (A.w.giro && A.w.giro !== "sx" && A.w.giro !== "dx") err.push({ riga: i, msg: `giro "${A.w.giro}": scrivi sx o dx` });
-        scelte.set(ar, { forma, giro: A.w.giro, larga: A.n.larga, alzata: A.n.alzata, pedata: A.n.pedata, prima: A.n.prima, pozzo: A.n.pozzo, ventaglio: A.f.has("ventaglio"), pianerottolo: A.f.has("pianerottolo"), L: A.mis?.[0], P: A.mis?.[1] });
+        scelte.set(ar, { forma, giro: A.w.giro, larga: A.n.larga, seconda: A.n.seconda, alzata: A.n.alzata, pedata: A.n.pedata, prima: A.n.prima, pozzo: A.n.pozzo, ventaglio: A.f.has("ventaglio"), pianerottolo: A.f.has("pianerottolo"), soletta: A.f.has("soletta"), L: A.mis?.[0], P: A.mis?.[1] });
         if (!ar.H) scaleAuto.push(ar);
       }
       M.el.push(ar);

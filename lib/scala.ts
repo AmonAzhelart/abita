@@ -4,9 +4,11 @@
 import type { Pt } from "./lingua.ts";
 
 export type Forma = "dritta" | "l" | "u" | "chiocciola";
-export type Gradino = { poli: Pt[]; z: number; tipo: "gradino" | "pianerottolo" | "ventaglio" };
+export type Gradino = { poli: Pt[]; z: number; tipo: "gradino" | "pianerottolo" | "ventaglio"; sotto?: number };   // sotto: dove finisce la soletta (di serie piena fino a terra)
 export type Scala = {
   forma: Forma; giro: "sx" | "dx"; larga: number; alzate: number; alzata: number; pedata: number;
+  seconda?: number;               // a L e a U: la seconda rampa, se è larga diversa dalla prima
+  soletta?: boolean;              // una soletta a gradoni: sotto resta il vuoto
   rampe: number[];                // alzate di ogni rampa, nell'ordine in cui si sale
   prima: number;                  // pedate prima della svolta (o del pianerottolo), -1 se non c'è
   pozzo?: number;                 // a U: il vuoto tra le due rampe
@@ -14,10 +16,11 @@ export type Scala = {
   gradini: Gradino[]; sagoma: Pt[]; percorso: Pt[]; L: number; P: number; avvisi: string[];
 };
 /** forma e giro come scritti nel testo; L, P: le misure "LxP" della riga (larghezza e lunghezza per la dritta, diametro per la chiocciola). */
-export type Scelte = { forma?: string; giro?: string; larga?: number; alzata?: number; pedata?: number; prima?: number; pozzo?: number; ventaglio?: boolean; pianerottolo?: boolean; L?: number; P?: number; H: number };
+export type Scelte = { forma?: string; giro?: string; larga?: number; seconda?: number; alzata?: number; pedata?: number; prima?: number; pozzo?: number; ventaglio?: boolean; pianerottolo?: boolean; soletta?: boolean; L?: number; P?: number; H: number };
 
 export const FORME: Record<Forma, string> = { dritta: "dritta", l: "a L", u: "a U", chiocciola: "a chiocciola" };
 const PALO = 7;                                            // raggio del palo della chiocciola
+const SOLETTA = 20;                                        // spessore della soletta sotto i gradini e il pianerottolo
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const rett = (x0: number, y0: number, x1: number, y1: number): Pt[] => [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
 const tra = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -52,10 +55,11 @@ export function progettaScala(s: Scelte): Scala {
   const z = (i: number) => r1((i + 1) * a);
   const blondel = r1(tra(63 - 2 * a, elica ? 20 : 24, 32));
   const G: Gradino[] = [], avvisi: string[] = [];
-  let larga = s.larga ?? s.L ?? 100, pedata = s.pedata ?? blondel, rampe = [alzate], passo: number | undefined;
+  let larga = s.larga ?? s.L ?? 100, pedata = s.pedata ?? blondel, rampe = [alzate], passo: number | undefined, w2 = larga;
   let sagoma: Pt[], percorso: Pt[];
-  const kw = forma === "l" ? (s.ventaglio ? Math.max(3, Math.round((Math.PI * larga) / 4 / pedata)) : 1)
-    : forma === "u" ? (s.ventaglio ? Math.max(5, Math.round((Math.PI * ((s.pozzo ?? 10) + larga)) / 2 / pedata)) : 1) : 0;
+  const wm = (larga + (s.seconda ?? larga)) / 2;            // la larghezza media, per i ventagli
+  const kw = forma === "l" ? (s.ventaglio ? Math.max(3, Math.round((Math.PI * wm) / 4 / pedata)) : 1)
+    : forma === "u" ? (s.ventaglio ? Math.max(5, Math.round((Math.PI * ((s.pozzo ?? 10) + wm)) / 2 / pedata)) : 1) : 0;
   if (kw && T - kw < 0) forma = "dritta";                   // troppo bassa per girare
 
   if (forma === "chiocciola") {
@@ -92,22 +96,24 @@ export function progettaScala(s: Scelte): Scala {
       percorso = [{ x: w / 2, y: 0 }, { x: w / 2, y }];
     } else {
       const u = forma === "u", g = u ? (s.pozzo ?? 10) : 0, tg = T - kw, k = tra(s.prima ?? Math.ceil(tg / 2), 0, tg), m = tg - k, L1 = k * p;
+      w2 = s.seconda ?? w;
+      const D = u ? Math.max(w, w2) : w2, W = w + g + w2;   // la svolta: profonda quanto la rampa più larga; a U larga quanto tutte e due
       let i = 0;
       for (let j = 0; j < k; j++) G.push({ poli: rett(0, -(j + 1) * p, w, -j * p), z: z(i++), tipo: "gradino" });
-      const svolta = rett(0, -L1 - w, u ? 2 * w + g : w, -L1);
+      const svolta = rett(0, -L1 - D, u ? W : w, -L1);
       if (!s.ventaglio) G.push({ poli: svolta, z: z(i++), tipo: "pianerottolo" });
       else {
         for (const poli of ventaglio(svolta, { x: u ? w + g / 2 : w, y: -L1 }, Math.PI, u ? 2 * Math.PI : 1.5 * Math.PI, kw)) G.push({ poli, z: z(i++), tipo: "ventaglio" });
-        passo = r1((u ? (Math.PI * (g + w)) / 2 : (Math.PI * w) / 4) / kw);
+        passo = r1((u ? (Math.PI * (g + wm)) / 2 : (Math.PI * wm) / 4) / kw);
       }
       if (u) {
-        for (let j = 0; j < m; j++) G.push({ poli: rett(w + g, -L1 + j * p, 2 * w + g, -L1 + (j + 1) * p), z: z(i++), tipo: "gradino" });
-        sagoma = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: -L1 }, { x: w + g, y: -L1 }, { x: w + g, y: -L1 + m * p }, { x: 2 * w + g, y: -L1 + m * p }, { x: 2 * w + g, y: -L1 - w }, { x: 0, y: -L1 - w }];
-        percorso = [{ x: w / 2, y: 0 }, { x: w / 2, y: -L1 - w / 2 }, { x: w * 1.5 + g, y: -L1 - w / 2 }, { x: w * 1.5 + g, y: -L1 + m * p }];
+        for (let j = 0; j < m; j++) G.push({ poli: rett(w + g, -L1 + j * p, W, -L1 + (j + 1) * p), z: z(i++), tipo: "gradino" });
+        sagoma = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: -L1 }, { x: w + g, y: -L1 }, { x: w + g, y: -L1 + m * p }, { x: W, y: -L1 + m * p }, { x: W, y: -L1 - D }, { x: 0, y: -L1 - D }];
+        percorso = [{ x: w / 2, y: 0 }, { x: w / 2, y: -L1 - D / 2 }, { x: w + g + w2 / 2, y: -L1 - D / 2 }, { x: w + g + w2 / 2, y: -L1 + m * p }];
       } else {
-        for (let j = 0; j < m; j++) G.push({ poli: rett(w + j * p, -L1 - w, w + (j + 1) * p, -L1), z: z(i++), tipo: "gradino" });
-        sagoma = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: -L1 }, { x: w + m * p, y: -L1 }, { x: w + m * p, y: -L1 - w }, { x: 0, y: -L1 - w }];
-        percorso = [{ x: w / 2, y: 0 }, { x: w / 2, y: -L1 - w / 2 }, { x: w + m * p, y: -L1 - w / 2 }];
+        for (let j = 0; j < m; j++) G.push({ poli: rett(w + j * p, -L1 - D, w + (j + 1) * p, -L1), z: z(i++), tipo: "gradino" });
+        sagoma = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: -L1 }, { x: w + m * p, y: -L1 }, { x: w + m * p, y: -L1 - D }, { x: 0, y: -L1 - D }];
+        percorso = [{ x: w / 2, y: 0 }, { x: w / 2, y: -L1 - D / 2 }, { x: w + m * p, y: -L1 - D / 2 }];
       }
       if (!s.ventaglio) rampe = [k + 1, m + 1];
       if (giro === "sx") {                                  // a sinistra: lo specchio
@@ -117,7 +123,8 @@ export function progettaScala(s: Scelte): Scala {
         percorso = percorso.map(sp);
       }
     }
-    if (larga < 80) avvisi.push(`larga ${cm(larga)} cm: stretta, servono almeno 80 cm`);
+    for (const v of new Set([larga, w2])) if (v < 80) avvisi.push(`larga ${cm(v)} cm: stretta, servono almeno 80 cm`);
+    if (s.soletta) for (const d of G) d.sotto = r1(Math.max(0, d.z - (d.tipo === "pianerottolo" ? 0 : a) - SOLETTA));
     const lunga = rampe.find(r => r > 15);
     if (lunga) avvisi.push(`una rampa da ${lunga} alzate: oltre 15 meglio un pianerottolo`);
     if (passo !== undefined && passo < 22) avvisi.push(`ventaglio: sulla linea di passo la pedata è ${cm(passo)} cm, comoda da 25`);
@@ -134,7 +141,7 @@ export function progettaScala(s: Scelte): Scala {
   if (pd < (elica ? 20 : 25)) avvisi.push(`pedata ${cm(pd)} cm: corta, comoda da ${elica ? 22 : 25} in su`);
   if (!elica && (b < 60 || b > 66)) avvisi.push(`2 alzate + pedata = ${cm(b)} cm: fuori dalla regola di Blondel (62–64)`);
   return {
-    forma, giro, larga: r1(larga), alzate, alzata: r1(a), pedata: r1(pedata), rampe, prima: G.findIndex(g => g.tipo !== "gradino"), pozzo: forma === "u" ? (s.pozzo ?? 10) : undefined, passo, gradini: G, sagoma: sagoma.map(sp), percorso: percorso.map(sp),
+    forma, giro, larga: r1(larga), seconda: w2 !== larga ? r1(w2) : undefined, soletta: forma !== "chiocciola" && !!s.soletta, alzate, alzata: r1(a), pedata: r1(pedata), rampe, prima: G.findIndex(g => g.tipo !== "gradino"), pozzo: forma === "u" ? (s.pozzo ?? 10) : undefined, passo, gradini: G, sagoma: sagoma.map(sp), percorso: percorso.map(sp),
     L: r1(Math.max(...xs) - Math.min(...xs)), P: r1(Math.max(...ys) - Math.min(...ys)), avvisi,
   };
 }
@@ -143,5 +150,5 @@ export function progettaScala(s: Scelte): Scala {
 export function descriviScala(sc: Scala) {
   const pd = sc.forma === "chiocciola" ? sc.passo! : sc.pedata;
   return `scala ${FORME[sc.forma]}${sc.forma !== "dritta" ? ` che gira a ${sc.giro === "dx" ? "destra" : "sinistra"}` : ""}: ${sc.alzate} alzate da ${cm(sc.alzata)} cm, pedata ${cm(pd)} cm`
-    + (sc.rampe.length > 1 ? `, rampe da ${sc.rampe.join(" e ")}` : "") + `, larga ${cm(sc.larga)} cm, ingombro ${Math.round(sc.L)}×${Math.round(sc.P)} · 2a+p = ${cm(2 * sc.alzata + pd)}`;
+    + (sc.rampe.length > 1 ? `, rampe da ${sc.rampe.join(" e ")}` : "") + `, larga ${cm(sc.larga)}${sc.seconda ? ` e ${cm(sc.seconda)}` : ""} cm${sc.soletta ? ", a soletta" : ""}, ingombro ${Math.round(sc.L)}×${Math.round(sc.P)} · 2a+p = ${cm(2 * sc.alzata + pd)}`;
 }

@@ -8,6 +8,7 @@ import { ancora } from "./ancora.ts";
 import { riepilogo, uso } from "./verifiche.ts";
 import { altezzaLibera } from "./altezza.ts";
 import { sezione } from "./sezione.ts";
+import { descriviScala } from "./scala.ts";
 
 const M = leggi(ESEMPIO);
 assert.deepEqual(M.errori, [], "l'esempio non deve avere errori");
@@ -113,6 +114,14 @@ const lv = scl("scala forma L ventaglio giro sx a 0,0").scala!, spicchi = lv.gra
 assert.equal(spicchi.length, 3);
 assert.ok(Math.abs(spicchi.reduce((t, g) => t + Math.abs(area2(g.poli)), 0) - 100 * 100) < 20, "i ventagli riempiono il quadrato della svolta");
 assert.ok(lv.gradini[0].poli.every(q => q.x > 0), "gira a sinistra: si parte dal lato destro");
+// rampe larghe diverse e soletta: la seconda rampa a 90, il pianerottolo profondo 90, sotto i gradini il vuoto
+const u2 = scl("scala U larga 80 seconda 90 pozzo 15 soletta a 0,0"), s2 = u2.scala!;
+assert.deepEqual([u2.L, s2.larga, s2.seconda, s2.soletta, s2.avvisi], [185, 80, 90, true, []]);
+assert.match(descriviScala(s2), /larga 80 e 90 cm, a soletta/);
+const pn = s2.gradini.find(g => g.tipo === "pianerottolo")!;
+assert.deepEqual([s2.gradini[0].sotto, pn.sotto, Math.round(Math.abs(pn.poli[0].y - pn.poli[2].y))], [0, Math.round((pn.z - 20) * 10) / 10, 90]);
+assert.equal(s2.gradini[5].sotto, Math.round((s2.gradini[5].z - s2.alzata - 20) * 10) / 10, "sotto un gradino la soletta segue i gradini");
+assert.equal(u.scala!.gradini[3].sotto, undefined, "di serie piena fino a terra");
 const ch = scl("scala chiocciola 160 a 0,0");
 assert.deepEqual([ch.scala!.forma, ch.L, ch.P, ch.scala!.alzata, ch.scala!.avvisi], ["chiocciola", 160, 160, 20, []]);
 assert.match(scl("scala 100x300 a 0,0").scala!.avvisi.join(), /pedata 18,8 cm: corta/, "100x300 per 3 metri è troppo ripida");

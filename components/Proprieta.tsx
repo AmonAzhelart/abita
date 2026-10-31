@@ -211,9 +211,11 @@ export default function Proprieta({ M, el, testo, cambia, onChiudi, onElimina, o
           {(f === "l" || f === "u") && <Scelta nome="Nella svolta" valore={ventaglio ? "ventaglio" : "pianerottolo"} opzioni={[["pianerottolo", "Pianerottolo"], ["ventaglio", "Gradini a ventaglio"]]}
             onCambia={v => aggiorna(t => segna(t, r, "ventaglio", v === "ventaglio"))} />}
           {f === "dritta" && <Interruttore nome="Pianerottolo a metà" aiuto="Spezza la rampa in due" on={sc.rampe.length > 1} onCambia={on => aggiorna(t => segna(t, r, "pianerottolo", on))} />}
+          {f !== "chiocciola" && <Interruttore nome="A soletta" aiuto="Sotto la scala resta il vuoto per armadi e nicchie" on={!!sc.soletta} onCambia={on => aggiorna(t => segna(t, r, "soletta", on))} />}
           <div className="campi-2">
-            <Numero nome={f === "chiocciola" ? "Diametro" : "Larghezza"} valore={f === "chiocciola" ? Math.round(sc.L) : sc.larga} min={40}
+            <Numero nome={f === "chiocciola" ? "Diametro" : f === "dritta" ? "Larghezza" : "Prima rampa"} valore={f === "chiocciola" ? Math.round(sc.L) : sc.larga} min={40}
               onCambia={v => num("larga")(f === "chiocciola" ? Math.round((v - 14) * 5) / 10 : v)} />
+            {(f === "l" || f === "u") && <Numero nome="Seconda rampa" valore={sc.seconda ?? sc.larga} min={40} onCambia={v => num("seconda")(v === sc.larga ? null : v)} />}
             <Numero nome="Sale di" valore={Math.round(el.H)} min={20} onCambia={v => num("altezza")(v === auto ? null : v)} />
             <Numero nome="Alzata" valore={sc.alzata} min={10} passo={0.5} onCambia={num("alzata")} />
             <Numero nome={f === "chiocciola" ? "Pedata al passo" : "Pedata"} valore={sc.pedata} min={15} onCambia={num("pedata")} />
