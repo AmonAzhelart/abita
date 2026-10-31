@@ -5,6 +5,7 @@ import { aggiungi, area2, dentro, imposta, impostaPunti, leggi, segna, righeCamb
 import { passaggi, testoPassaggi } from "./passaggi.ts";
 import { muroInCorso } from "./scena.ts";
 import { ancora } from "./ancora.ts";
+import { riepilogo, uso } from "./verifiche.ts";
 
 const M = leggi(ESEMPIO);
 assert.deepEqual(M.errori, [], "l'esempio non deve avere errori");
@@ -114,4 +115,15 @@ const ch = scl("scala chiocciola 160 a 0,0");
 assert.deepEqual([ch.scala!.forma, ch.L, ch.P, ch.scala!.alzata, ch.scala!.avvisi], ["chiocciola", 160, 160, 20, []]);
 assert.match(scl("scala 100x300 a 0,0").scala!.avvisi.join(), /pedata 18,8 cm: corta/, "100x300 per 3 metri è troppo ripida");
 assert.equal(imposta("scala 100x300 a 715,560", 0, "misure", null), "scala a 715,560");
+// superfici e verifiche (DM 5/7/1975): l'esempio è in regola; una camera piccola e senza finestre no
+const rv = riepilogo(M);
+assert.deepEqual(rv.piani.flatMap(p => p.stanze.flatMap(v => v.avvisi.map(a => `${v.s.nome}: ${a}`))), []);
+assert.equal(rv.utile, Math.round(M.el.reduce((t, e) => t + (e.tipo === "stanza" ? e.area : 0), 0) * 10) / 10);
+assert.deepEqual([uso("Camera matrimoniale"), uso("Cameretta"), uso("Bagno di servizio"), uso("Disimpegno")], ["doppia", "camera", "bagno", "servizio"]);
+const cp = riepilogo(leggi(`piano Terra altezza 260
+muro 0,0 >300 v260 <300 chiudi spessore 20
+stanza Camera 10,10 290,250`)).piani[0].stanze[0].avvisi.join(" | ");
+assert.match(cp, /6,7 m²: per una camera singola ne servono almeno 9/);
+assert.match(cp, /nessuna finestra/);
+assert.match(cp, /alta 260 cm/);
 console.log("lingua ok");

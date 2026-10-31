@@ -4,7 +4,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as TastoReact, type PointerEvent as Puntatore } from "react";
 import { aggiungi, angoli, dentro, distSeg, imposta, impostaPunti, leggi, segmenti, sposta, togli, type Arredo, type Modello, type Pt, type Stanza } from "@/lib/lingua";
+import { hex } from "@/lib/arredi";
 import { passaggi } from "@/lib/passaggi";
+import { NOMI_USO, riepilogo } from "@/lib/verifiche";
 import type { Appunto, Foto, Progetto } from "@/lib/progetti";
 import Catalogo from "./Catalogo";
 import Codice from "./Codice";
@@ -12,6 +14,7 @@ import Pianta, { type Strumento } from "./Pianta";
 import Proprieta, { pianoSopra, Profilo, titolo } from "./Proprieta";
 import Vista3D, { useMesh, type Traccia, type Volo } from "./Vista3D";
 
+const m2 = (v: number) => v.toFixed(1).replace(".", ",");
 type Rpc = { ok: true; doc: Progetto } | { ok: false; stato: number; errore: string };
 async function rpc(azione: string, dati: object): Promise<Rpc> {
   const r = await fetch("/api/studio", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ azione, ...dati }) });
@@ -92,7 +95,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const [sel, setSel] = useState<number | null>(null);
   const [evid, setEvid] = useState<number[]>([]);
   const [sx, setSx] = useState<"codice" | "foto" | "versioni">("codice");
-  const [dx, setDx] = useState<"appunti" | "claude">("appunti");
+  const [dx, setDx] = useState<"appunti" | "superfici" | "claude">("appunti");
   const [aperto, setAperto] = useState<"" | "sx" | "dx">("");
   const [quote, setQuote] = useState(true), [vediPassaggi, setVediPassaggi] = useState(false), [tetto, setTetto] = useState(true);
   const [filtro, setFiltro] = useState<"da fare" | "tutti">("da fare");
@@ -306,6 +309,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
 
   const es = useMemo(() => (vediPassaggi ? passaggi(M, piano, mesh) : null), [vediPassaggi, M, piano, mesh]);
   const appunti = useMemo(() => p.appunti.map((a, i) => ({ ...a, n: i + 1 })), [p.appunti]);
+  const rie = useMemo(() => (dx === "superfici" ? riepilogo(M) : null), [dx, M]);
   const visibili = appunti.filter(a => filtro === "tutti" || a.stato === "da fare").slice().reverse();
   const ultimoClaude = p.attivita.find(a => a.chi === "claude")?.quando;
   const claudeAttivo = !!ultimoClaude && Date.now() - ultimoClaude < 90_000;
@@ -395,6 +399,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
         <a className="btn piccolo nascondi-mobile" href={p.pubblicato ? `/v/${p.share}` : undefined} target="_blank" rel="noreferrer" aria-disabled={!p.pubblicato}
           onClick={e => { if (!p.pubblicato) { e.preventDefault(); mostra("Il cliente vedrà il progetto dopo la prima pubblicazione"); } }}>Vista cliente</a>
         <button className="btn piccolo nascondi-mobile" onClick={() => navigator.clipboard.writeText(link).then(() => mostra("Link del cliente copiato"))}>Copia link</button>
+        <a className="btn piccolo nascondi-mobile" href={`/studio/${id}/stampa?piano=${piano}`} target="_blank" rel="noreferrer" title="Pianta in scala 1:50 o 1:100, da stampare o salvare in PDF">Stampa</a>
         <button className={"btn piccolo" + (pubblicato ? "" : " primario")} onClick={() => { setBozza({ tipo: "pubblica" }); setScritto(""); }}>
           {pubblicato ? `Pubblicato v${p.pubblicato!.versione}` : p.pubblicato ? "Pubblica modifiche" : "Pubblica"}
         </button>
@@ -455,7 +460,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       <main ref={centro} className={"ed-centro" + (vista === "divisa" ? " divisa" : "")} style={{ "--parte": `${parte * 100}%` } as CSSProperties}>
         {vista !== "3d" && <section className="lato lato-pianta" aria-label="Pianta">
           <Pianta modello={M} piano={piano} quote={quote} passaggi={es} modifica strumento={strumento} modoAppunto={modoAppunto} sel={sel} evid={evid}
-            appunti={appunti} notaSel={notaSel} foto={p.foto} fotoAttiva={fotoAttiva} centra={centra} adatta={adatta}
+            appunti={filtro === "tutti" ? appunti : appunti.filter(a => a.stato === "da fare" || a.id === notaSel)} notaSel={notaSel} foto={p.foto} fotoAttiva={fotoAttiva} centra={centra} adatta={adatta}
             onSel={scegli} onSposta={posa}
             onVertici={(r, pts) => cambia(impostaPunti(R.current.testo, r, pts))} onDisegna={disegnato}
             muro={{ spessore: opzMuro.spessore, a: hA, b: hB }} onBozza={setInCorso}
@@ -541,8 +546,33 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
           onAppunto={() => { versoPianta(); setStrumento("appunto"); setModoAppunto("punto"); mostra("Tocca il punto della pianta dove va l'appunto"); }} />}
         <div className="schede" role="tablist">
           <button role="tab" aria-selected={dx === "appunti"} onClick={() => setDx("appunti")}>Appunti ({appunti.filter(a => a.stato === "da fare").length})</button>
-          <button role="tab" aria-selected={dx === "claude"} onClick={() => setDx("claude")} style={{ color: dx === "claude" ? "var(--claude)" : undefined }}>Cosa fa Claude</button>
+          <button role="tab" aria-selected={dx === "superfici"} onClick={() => setDx("superfici")}>Superfici</button>
+          <button role="tab" aria-selected={dx === "claude"} onClick={() => setDx("claude")} style={{ color: dx === "claude" ? "var(--claude)" : undefined }}>Claude</button>
         </div>
+        {dx === "superfici" && rie && <div className="scorre">
+          <div className="blocco superfici-testa">
+            <div><b>{m2(rie.utile)} m²</b> <span className="tenue">di superficie utile</span></div>
+            <span className={rie.avvisi ? "da-vedere" : "ok"}>{rie.avvisi ? `${rie.avvisi} ${rie.avvisi === 1 ? "cosa" : "cose"} da vedere` : "Tutto in regola"}</span>
+            <a className="btn piccolo" href={`/studio/${id}/stampa?piano=${piano}`} target="_blank" rel="noreferrer">Stampa in scala</a>
+          </div>
+          {rie.piani.map(pp => <div key={pp.id} className="blocco superfici-piano">
+            <div className="superfici-titolo"><b>{pp.nome}</b><span>{m2(pp.utile)} m²</span></div>
+            {pp.stanze.map(v => (
+              <div key={v.s.riga} role="button" tabIndex={0} className={"stanza-riga" + (v.avvisi.length ? " da-vedere" : "")} aria-current={sel === v.s.riga}
+                onClick={() => { setPiano(pp.id); scegli(v.s.riga); }} onKeyDown={e => { if (e.key === "Enter") { setPiano(pp.id); scegli(v.s.riga); } }}>
+                <span className="nome">{v.s.nome}<small>{NOMI_USO[v.uso]}</small></span>
+                <span className="num">{m2(v.area)} m²{v.finestre > 0 && <small>luce 1/{Math.max(1, Math.round(v.area / v.finestre))}</small>}</span>
+                {v.avvisi.length > 0 && <ul>{v.avvisi.map(a => <li key={a}>{a}</li>)}</ul>}
+              </div>
+            ))}
+            {!pp.stanze.length && <span className="piccolo tenue">Nessuna stanza su questo piano.</span>}
+            {pp.stanze[0]?.variabile && <span className="piccolo tenue">Sottotetto: l&apos;altezza cambia sotto la falda. Le regole sono regionali, spesso chiedono 2,40 m di media.</span>}
+          </div>)}
+          {rie.pavimenti.length > 0 && <div className="blocco"><span className="etichetta" style={{ margin: 0 }}>Pavimenti</span>
+            <div className="pavimenti">{rie.pavimenti.map(([c, a]) => <span key={c}><i style={{ background: hex(c) }} />{c.startsWith("#") ? "su misura" : c.replace("_", " ")} <b>{m2(a)} m²</b></span>)}</div>
+          </div>}
+          <div className="blocco piccolo tenue">Verifiche del DM 5 luglio 1975: camere da 9 m² (doppie da 14), soggiorno da 14, finestre almeno 1/8 del pavimento nei locali abitabili, altezza 270 cm (240 nei bagni e nei locali di servizio). L&apos;uso della stanza si capisce dal nome.</div>
+        </div>}
         {dx === "appunti" && <div className="scorre">
           <div className="blocco" style={{ gridTemplateColumns: "1fr auto", alignItems: "center" }}>
             <div className="segmenti">{(["da fare", "tutti"] as const).map(f => <button key={f} aria-pressed={filtro === f} onClick={() => setFiltro(f)}>{f === "da fare" ? "Da fare" : "Tutti"}</button>)}</div>

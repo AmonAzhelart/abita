@@ -347,7 +347,7 @@ export default function Pianta(p: Props) {
           {giro && etichettaPx(ruotaPresa.h.x, ruotaPresa.h.y - px(22), `${giro.gradi}°`)}
         </g>}
         {p.appunti?.filter(a => a.piano === piano).map(a => (
-          <g key={a.id} data-nota={a.id} className="spillo">
+          <g key={a.id} data-nota={a.id} className={"spillo" + (a.stato === "fatta" && a.id !== p.notaSel ? " fatta" : "")}>
             {a.tipo === "linea" && a.b && <line x1={a.a.x} y1={a.a.y} x2={a.b.x} y2={a.b.y} style={{ stroke: COL(a), strokeWidth: 3, vectorEffect: "non-scaling-stroke" }} />}
             {a.tipo === "zona" && a.b && <rect x={Math.min(a.a.x, a.b.x)} y={Math.min(a.a.y, a.b.y)} width={Math.abs(a.b.x - a.a.x)} height={Math.abs(a.b.y - a.a.y)}
               style={{ fill: COL(a), fillOpacity: 0.1, stroke: COL(a), strokeWidth: 2, strokeDasharray: "8 5", vectorEffect: "non-scaling-stroke" }} />}

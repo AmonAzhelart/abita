@@ -362,3 +362,51 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6
 .scala-conti ul { margin: 2px 0 0; padding-left: 18px; color: #c2410c; }
 .scala-conti.con-avvisi { background: color-mix(in srgb, #d9480f 7%, transparent); border-color: color-mix(in srgb, #d9480f 28%, transparent); }
 .forma-scala .segmenti { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
+
+/* appunti fatti: sbiaditi e lasciano passare il tocco */
+.spillo.fatta { opacity: 0.4; pointer-events: none; }
+
+/* superfici e verifiche */
+.superfici-testa { grid-template-columns: 1fr auto; align-items: center; row-gap: 6px; }
+.superfici-testa > div b { font: 400 24px/1 var(--display); }
+.superfici-testa .btn { grid-column: 1 / -1; justify-self: start; }
+.superfici-testa .ok, .stanza-riga .ok { color: #2f9e44; font-size: 13px; font-weight: 500; }
+.superfici-testa .da-vedere { color: #c2410c; font-size: 13px; font-weight: 500; }
+.superfici-piano { gap: 4px; }
+.superfici-titolo { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 4px; }
+.superfici-titolo span { font-variant-numeric: tabular-nums; color: var(--muted); }
+.stanza-riga { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.stanza-riga:hover, .stanza-riga[aria-current="true"] { background: var(--chip); }
+.stanza-riga:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.stanza-riga .nome { display: grid; }
+.stanza-riga small { color: var(--muted); font-size: 12px; }
+.stanza-riga .num { display: grid; justify-items: end; font-variant-numeric: tabular-nums; }
+.stanza-riga ul { grid-column: 1 / -1; margin: 2px 0 0; padding-left: 18px; color: #c2410c; font-size: 13px; }
+.stanza-riga.da-vedere { box-shadow: inset 3px 0 0 #d9480f; }
+.pavimenti { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; }
+.pavimenti span { display: inline-flex; align-items: center; gap: 6px; }
+.pavimenti i { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--line); display: inline-block; }
+.pavimenti b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* stampa in scala: fogli bianchi veri, nient'altro sulla carta */
+.stampa { min-height: 100dvh; background: #e6e6e0; color: #23262b; padding: 0 16px 32px; display: grid; gap: 18px; justify-items: center; align-content: start; overflow-x: auto; }
+.stampa-barra { position: sticky; top: 0; z-index: 5; width: min(1200px, 100%); display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; margin-top: 12px; border-radius: 14px; color: var(--fg); }
+.stampa-piani { display: flex; flex-wrap: wrap; gap: 10px; font-size: 14px; }
+.stampa-piani label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.tavola { position: relative; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18); flex: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.tavola-pianta { position: absolute; overflow: hidden; font-family: var(--ui); }
+.tavola-esce { position: absolute; top: 4mm; left: 10mm; margin: 0; font-size: 3mm; color: #c2410c; }
+.cartiglio { position: absolute; display: grid; grid-template-columns: 1.4fr 1.2fr auto 0.9fr; border: 0.3mm solid #23262b; font: 400 2.6mm/1.3 var(--ui); }
+.cartiglio > div { display: grid; align-content: center; gap: 0.6mm; padding: 0 3mm; border-left: 0.2mm solid #23262b; }
+.cartiglio > div:first-child { border-left: 0; }
+.cartiglio span { color: #5b6169; }
+.cartiglio-titolo { font: 400 4.4mm/1.1 var(--display); }
+.cartiglio-scala svg { display: block; }
+@media print {
+  body { background: #fff; }
+  .stampa { display: block; padding: 0; background: none; overflow: visible; }
+  .stampa-barra, .stampa > p { display: none; }
+  .tavola { box-shadow: none; break-after: page; }
+  .tavola:last-child { break-after: auto; }
+  .tavola-esce { display: none; }
+}
