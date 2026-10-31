@@ -1,7 +1,7 @@
 // Dal modello alla scena three.js: un gruppo per piano più uno per i tetti. Metri, y in alto, z = y della pianta.
 import * as THREE from "three";
 import { pezzi, rgb } from "./arredi.ts";
-import { angoli, dentro, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Pt } from "./lingua.ts";
+import { dentro, locale, sagoma, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Pt } from "./lingua.ts";
 
 type Buf = Map<string, number[]>;
 const add = (b: Buf, m: string, ...v: number[][]) => { let a = b.get(m); if (!a) b.set(m, (a = [])); for (const p of v) a.push(p[0], p[1], p[2]); };
@@ -21,6 +21,19 @@ function cilindro(b: Buf, m: string, cx: number, cy: number, z: number, d: numbe
     add(b, m, P(i, 0), P(i + 1, 0), P(i + 1, h), P(i, 0), P(i + 1, h), P(i, h));
     add(b, m, W(cx, cy, z + h), P(i, h), P(i + 1, h), W(cx, cy, z), P(i + 1, 0), P(i, 0));
   }
+}
+
+/** Prisma dritto su un poligono convesso della pianta, da z0 a z1 (i gradini delle scale). */
+function prisma(b: Buf, m: string, pts: Pt[], z0: number, z1: number) {
+  if (z1 - z0 < 0.1) return;
+  for (let i = 1; i + 1 < pts.length; i++) {
+    add(b, m, W(pts[0].x, pts[0].y, z1), W(pts[i].x, pts[i].y, z1), W(pts[i + 1].x, pts[i + 1].y, z1));
+    add(b, m, W(pts[0].x, pts[0].y, z0), W(pts[i + 1].x, pts[i + 1].y, z0), W(pts[i].x, pts[i].y, z0));
+  }
+  pts.forEach((p, i) => {
+    const q = pts[(i + 1) % pts.length];
+    add(b, m, W(p.x, p.y, z0), W(q.x, q.y, z0), W(q.x, q.y, z1), W(p.x, p.y, z0), W(q.x, q.y, z1), W(p.x, p.y, z1));
+  });
 }
 
 function forma(pts: Pt[], buchi: Pt[][] = []) {
@@ -116,6 +129,14 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
           if (!arr) dove.set(k, (arr = []));
           for (const x of out) arr.push(x);
         }
+      } else if (a.scala) {                                // pieni fino a terra con la pedata sopra; la chiocciola ha solo le pedate e il palo
+        const z0 = P.quota + a.quota, elica = a.scala.forma === "chiocciola";
+        for (const g of a.scala.gradini) {
+          const pts = g.poli.map(q => locale(a, q.x, q.y));
+          if (!elica) prisma(b, "intonaco", pts, z0, z0 + g.z - 3);
+          prisma(b, a.colore, pts, z0 + g.z - (elica ? 5 : 3), z0 + g.z);
+        }
+        if (elica) cilindro(b, "acciaio", a.a.x, a.a.y, z0, 14, a.H + 95);
       } else for (const p of pezzi(a.cosa, a.L, a.P, a.H, a.colore)) {
         const x = a.a.x + p.x * c - p.y * s, y = a.a.y + p.x * s + p.y * c, z = P.quota + a.quota + p.z;
         if (p.cil) cilindro(b, p.m, x, y, z, p.sx, p.sz);
@@ -142,7 +163,7 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
     }
 
     const scale = M.el.filter((s): s is Arredo => s.tipo === "arredo" && s.cosa === "scala" && s.piano !== P.id &&
-      Math.abs((M.piani.find(p => p.id === s.piano)?.quota ?? 0) + s.H - P.quota) < 40).map(s => angoli(s))
+      Math.abs((M.piani.find(p => p.id === s.piano)?.quota ?? 0) + s.H - P.quota) < 40).map(sagoma)
       .concat(el.flatMap(f => (f.tipo === "foro" ? [f.punti] : [])));
     for (const e of el) {
       if (e.tipo === "stanza" || e.tipo === "area") {

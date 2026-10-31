@@ -6,7 +6,8 @@ import { chiaveValida } from "@/lib/auth";
 import { GUIDA } from "@/lib/guida";
 import { pngPianta } from "@/lib/immagine";
 import { etichetta, leggi, riassunto, stanzaDi, vicini, type Modello } from "@/lib/lingua";
-import { testoPassaggi } from "@/lib/passaggi";
+import { testoPassaggi, type Triangoli } from "@/lib/passaggi";
+import { descriviScala } from "@/lib/scala";
 import * as P from "@/lib/progetti";
 
 export const maxDuration = 60;
@@ -16,7 +17,7 @@ Come lavorare:
 1. La prima volta leggi guida_lingua. Poi progetti → leggi_progetto per avere il testo con i numeri di riga.
 2. Gli appunti (appunti) sono le richieste del progettista e dei clienti, con le coordinate sulla pianta e gli elementi vicini.
 3. Cambia il progetto con modifica_progetto (sostituzioni precise) o scrivi_progetto (testo intero). Scrivi sempre un messaggio breve: il progettista lo vede in diretta nell'editor.
-4. Dopo ogni modifica usa guarda per vedere la pianta e controlla i passaggi (70 cm). Se una cosa non entra, dillo invece di forzarla.
+4. Dopo ogni modifica usa guarda per vedere la pianta e controlla i passaggi (60 cm, spazio davanti ai mobili, porte, scale). Se una cosa non entra, dillo invece di forzarla.
 5. Chiudi gli appunti con rispondi_appunto. Usa chiedi se ti manca una misura.
 6. Non pubblicare per il cliente se il progettista non te lo chiede.`;
 
@@ -40,15 +41,19 @@ function piano(M: Modello, nome?: string) {
 }
 const numerato = (t: string) => t.split("\n").map((r, i) => `${String(i + 1).padStart(4)} | ${r}`).join("\n");
 const errori = (M: Modello) => (M.errori.length ? "Errori da correggere:\n" + M.errori.map(e => `- riga ${e.riga + 1}: ${e.msg}`).join("\n") : "Nessun errore.");
-const passaggiTutti = (M: Modello) => M.piani.map(p => testoPassaggi(M, p.id)).join("\n");
+/** I triangoli dei modelli importati, per i passaggi: si passa sotto travi e chiome. */
+const triangoli = async (p: P.Progetto): Promise<Triangoli> => Object.fromEntries(Object.entries(await P.meshModelli(p)).map(([n, mats]) => [n,
+  Object.fromEntries(Object.entries(mats).map(([k, b]) => { const u = Buffer.from(b, "base64"); return [k, new Float32Array(u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength))]; }))]));
+const passaggiTutti = (M: Modello, mesh: Triangoli) => M.piani.map(p => testoPassaggi(M, p.id, mesh)).join("\n")
+  + M.el.flatMap(e => (e.tipo === "arredo" && e.scala ? [`\nRiga ${e.riga + 1}, ${descriviScala(e.scala)}${e.scala.avvisi.length ? `. Da rivedere: ${e.scala.avvisi.join("; ")}` : ". Comoda."}`] : [])).join("");
 function quando(t: number) {
   const m = Math.round((Date.now() - t) / 60000);
   return m < 1 ? "adesso" : m < 60 ? `${m} min fa` : m < 1440 ? `${Math.round(m / 60)} ore fa` : `${Math.round(m / 1440)} giorni fa`;
 }
 
-function esito(p: P.Progetto, prima: string, origin: string) {
+async function esito(p: P.Progetto, prima: string, origin: string) {
   const M = leggi(p.testo, p.modelli), n = p.attivita[0]?.righe?.length ?? 0;
-  return testo(`Salvato (rev ${p.rev}). ${prima === p.testo ? "Il testo non è cambiato." : `${n} righe nuove o cambiate.`}\n${errori(M)}\n\n${riassunto(M)}\n\n${passaggiTutti(M)}\n\nEditor: ${origin}/studio/${p.id}`);
+  return testo(`Salvato (rev ${p.rev}). ${prima === p.testo ? "Il testo non è cambiato." : `${n} righe nuove o cambiate.`}\n${errori(M)}\n\n${riassunto(M)}\n\n${passaggiTutti(M, await triangoli(p))}\n\nEditor: ${origin}/studio/${p.id}`);
 }
 
 function server(origin: string) {
@@ -77,7 +82,7 @@ function server(origin: string) {
   }, prova(async ({ id }: { id: string }) => {
     const p = await progetto(id), M = leggi(p.testo, p.modelli), da = p.appunti.filter(a => a.stato === "da fare").length;
     const pub = p.pubblicato ? `pubblicato v${p.pubblicato.versione} ${quando(p.pubblicato.quando)}${p.pubblicato.testo === p.testo ? "" : " (ci sono modifiche non pubblicate)"}` : "mai pubblicato";
-    return testo(`${p.nome}${p.cliente ? ` per ${p.cliente}` : ""} · id ${p.id} · rev ${p.rev} · ${pub}\nEditor: ${origin}/studio/${p.id} · cliente: ${origin}/v/${p.share}\n${da} appunti da fare${da ? " (strumento appunti)" : ""}\n\n${numerato(p.testo)}\n\n${errori(M)}\n\n${riassunto(M)}\n\n${passaggiTutti(M)}`);
+    return testo(`${p.nome}${p.cliente ? ` per ${p.cliente}` : ""} · id ${p.id} · rev ${p.rev} · ${pub}\nEditor: ${origin}/studio/${p.id} · cliente: ${origin}/v/${p.share}\n${da} appunti da fare${da ? " (strumento appunti)" : ""}\n\n${numerato(p.testo)}\n\n${errori(M)}\n\n${riassunto(M)}\n\n${passaggiTutti(M, await triangoli(p))}`);
   }));
 
   s.registerTool("scrivi_progetto", {
@@ -112,7 +117,7 @@ function server(origin: string) {
     inputSchema: { id: z.string(), piano: z.string().optional().describe("Nome del piano, di serie il primo"), quote: z.boolean().optional(), passaggi: z.boolean().optional() },
   }, prova(async ({ id, piano: pn, quote, passaggi }: { id: string; piano?: string; quote?: boolean; passaggi?: boolean }) => {
     const p = await progetto(id), M = leggi(p.testo, p.modelli), pid = piano(M, pn);
-    const r = await pngPianta(M, pid, { quote: quote ?? true, passaggi, appunti: p.appunti, titolo: p.nome });
+    const r = await pngPianta(M, pid, { quote: quote ?? true, passaggi, appunti: p.appunti, titolo: p.nome, mesh: passaggi ? await triangoli(p) : undefined });
     const legenda = [
       r.note.length ? "Appunti su questo piano: " + r.note.map(({ a, n }) => `${n}) ${a.stato} – ${a.testo.slice(0, 60)}`).join(" · ") : "",
       passaggi ? (r.problemi.length ? "Da sistemare: " + r.problemi.map(x => x.msg).join(" · ") : "Si passa ovunque.") : "",
@@ -169,11 +174,11 @@ function server(origin: string) {
   }));
 
   s.registerTool("passaggi", {
-    description: "Controlla che si passi ovunque (70 cm) dagli ingressi o dalla scala fino a ogni stanza e davanti a ogni mobile.",
+    description: "Controlla che si passi davvero: 60 cm dagli ingressi e su e giù per le scale fino a ogni stanza, lo spazio per usare ogni mobile, le porte che urtano, partenza e arrivo delle scale.",
     inputSchema: { id: z.string(), piano: z.string().optional() },
   }, prova(async ({ id, piano: pn }: { id: string; piano?: string }) => {
-    const pp = await progetto(id), M = leggi(pp.testo, pp.modelli);
-    return testo(pn ? testoPassaggi(M, piano(M, pn)) : passaggiTutti(M));
+    const pp = await progetto(id), M = leggi(pp.testo, pp.modelli), mesh = await triangoli(pp);
+    return testo(pn ? testoPassaggi(M, piano(M, pn), mesh) : passaggiTutti(M, mesh));
   }));
 
   s.registerTool("pubblica", {

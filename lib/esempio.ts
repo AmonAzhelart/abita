@@ -16,8 +16,8 @@ piano Terra altezza 280
 
   porta 100 a 300,800 verso Soggiorno               # ingresso
   varco 120 a 620,190
-  porta 80 a 620,740 verso Scala
-  porta 80 a 800,740 verso Bagno
+  porta 80 a 620,435 verso Scala
+  porta 80 a 800,435 verso Bagno
   finestra 160 a 300,0
   finestra 120 a 810,0 davanzale 110
   finestra 120 a 1000,190
@@ -38,8 +38,8 @@ piano Terra altezza 280
   cucina 260 a 760,45
   frigo a 945,47.5
   isola 160x90 a 810,240
-  scala 100x300 a 715,560
-  doccia a 860,440
+  scala U giro sx larga 80 a 710,630.5 ruota 180     # 18 alzate, pianerottolo in fondo
+  doccia a 850,740 ruota 180
   lavabo a 962.5,560 ruota 90
   wc a 957.5,650 ruota 90
 

@@ -1,8 +1,9 @@
 // Pianta in SVG (unità: cm). Stessa funzione per l'editor, la pagina del cliente e l'immagine che vede Claude.
 // Ogni elemento cliccabile porta data-r = numero di riga del testo.
 import { CATALOGO, hex } from "./arredi.ts";
-import { dentro, lati, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Muro, type Pt } from "./lingua.ts";
+import { dentro, lati, sagoma, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Muro, type Pt } from "./lingua.ts";
 import type { Esito } from "./passaggi.ts";
+import { progettaScala } from "./scala.ts";
 
 export type Colori = { muro: string; sotto: string; linea: string; testo: string; tenue: string; quota: string; fondo: string; bordo: string };
 export const CHIARO: Colori = { muro: "#23262B", sotto: "rgba(35,38,43,0.13)", linea: "#23262B", testo: "#23262B", tenue: "#5B6169", quota: "#2557A7", fondo: "#F8F8F5", bordo: "rgba(35,38,43,0.6)" };
@@ -18,6 +19,7 @@ const linea = (a: Pt, b: Pt, s: string) => `<line x1="${r1(a.x)}" y1="${r1(a.y)}
 const cerchio = (x: number, y: number, r: number, s: string) => `<circle cx="${r1(x)}" cy="${r1(y)}" r="${r1(r)}" style="${s}"/>`;
 const ellisse = (x: number, y: number, rx: number, ry: number, s: string) => `<ellipse cx="${r1(x)}" cy="${r1(y)}" rx="${r1(rx)}" ry="${r1(ry)}" style="${s}"/>`;
 const poli = (p: Pt[], s: string, extra = "") => `<polygon points="${p.map(P2).join(" ")}" style="${s}"${extra}/>`;
+const SALE = "#33373e";                                  // la linea di salita: scura, sui gradini chiari, in tutti e due i temi
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 export function riquadro(M: Modello, piano?: string) {
@@ -87,11 +89,13 @@ function simbolo(a: Arredo, C: Colori, M: Modello) {
     case "pouf": case "sgabello": return cerchio(0, 0, m / 2, F);
     case "camino": return base + rect(-L * 0.3, P / 2 - 14, L * 0.6, 14, st(hex("nero", 0.3), C.bordo, 0.8));
     case "libreria": return base + linea({ x: -L / 2 + 2, y: P / 2 - 4 }, { x: L / 2 - 2, y: P / 2 - 4 }, D);
-    case "scala": {
-      const n = Math.max(2, Math.round(a.H / 17.5)), t = P / n;
-      let s = base;
-      for (let i = 1; i < n; i++) s += linea({ x: -L / 2, y: P / 2 - i * t }, { x: L / 2, y: P / 2 - i * t }, D);
-      return s + linea({ x: 0, y: P / 2 - 8 }, { x: 0, y: -P / 2 + 10 }, st("none", C.linea, 1.6)) + poli([{ x: -9, y: -P / 2 + 22 }, { x: 0, y: -P / 2 + 6 }, { x: 9, y: -P / 2 + 22 }], st(C.linea));
+    case "scala": {                                       // i gradini veri e la linea di salita, dal pallino alla freccia
+      const sc = a.scala ?? progettaScala({ L, P, H: a.H || 300 }), pp = sc.percorso, z = pp[pp.length - 1], y = pp[pp.length - 2];
+      const d = Math.hypot(z.x - y.x, z.y - y.y) || 1, u = { x: (z.x - y.x) / d, y: (z.y - y.y) / d }, k = Math.min(14, sc.larga * 0.2);
+      return sc.gradini.map(g => poli(g.poli, g.tipo === "pianerottolo" ? S : F)).join("")
+        + (sc.forma === "chiocciola" ? cerchio(0, 0, 7, st(hex("acciaio", 0.2), C.bordo, 0.8)) : "")
+        + `<polyline points="${pp.map(P2).join(" ")}" style="${st("none", SALE, 1.6, ";stroke-linejoin:round")}"/>` + cerchio(pp[0].x, pp[0].y, 4, st(SALE))
+        + poli([{ x: z.x - u.x * k - u.y * k * 0.5, y: z.y - u.y * k + u.x * k * 0.5 }, z, { x: z.x - u.x * k + u.y * k * 0.5, y: z.y - u.y * k - u.x * k * 0.5 }], st(SALE));
     }
     default: return base + (["madia", "mobile_tv", "cassettiera", "comodino"].includes(a.cosa) ? linea({ x: -L / 2 + 3, y: P / 2 - 4 }, { x: L / 2 - 3, y: P / 2 - 4 }, D) : "");
   }
@@ -172,7 +176,7 @@ export function disegnaPianta(M: Modello, o: OpzPianta) {
   }
   for (const s of M.el) if (s.tipo === "arredo" && s.cosa === "scala" && s.piano !== o.piano && P &&
     Math.abs((M.piani.find(p => p.id === s.piano)?.quota ?? 0) + s.H - P.quota) < 40)    // il vuoto della scala che sale fin qui
-    sv.push(`<g transform="translate(${r1(s.a.x)} ${r1(s.a.y)}) rotate(${s.ruota})">${rect(-s.L / 2, -s.P / 2, s.L, s.P, st(C.fondo, C.tenue, 1, ";stroke-dasharray:6 4"))}${linea({ x: -s.L / 2, y: -s.P / 2 }, { x: s.L / 2, y: s.P / 2 }, st("none", C.tenue, 0.8))}</g>`);
+    sv.push(poli(sagoma(s), st(C.fondo, C.tenue, 1, ";stroke-dasharray:6 4")) + (s.scala ? `<g transform="translate(${r1(s.a.x)} ${r1(s.a.y)}) rotate(${s.ruota})">${s.scala.gradini.map(d => poli(d.poli, st("none", C.tenue, 0.6))).join("")}</g>` : ""));
   for (const e of qui) if (e.tipo === "arredo")
     sv.push(g(e.riga, `<g transform="translate(${r1(e.a.x)} ${r1(e.a.y)}) rotate(${e.ruota})">${simbolo(e, C, M)}</g>`, "arredo"));
   for (const e of qui) if (e.tipo === "muro")
@@ -213,10 +217,7 @@ export function contorno(M: Modello, riga: number): Pt[][] {
   switch (e.tipo) {
     case "stanza": case "area": return [e.punti];
     case "muro": return pezziMuro(M, e, false).map(p => p.pts);
-    case "arredo": {
-      const c = Math.cos((e.ruota * Math.PI) / 180), s = Math.sin((e.ruota * Math.PI) / 180);
-      return [[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => ({ x: e.a.x + (x * e.L * c) / 2 - (y * e.P * s) / 2, y: e.a.y + (x * e.L * s) / 2 + (y * e.P * c) / 2 }))];
-    }
+    case "arredo": return [sagoma(e)];
     case "apertura": {
       const g = e.aggancio;
       if (!g) return [[{ x: e.a.x - 20, y: e.a.y - 20 }, { x: e.a.x + 20, y: e.a.y - 20 }, { x: e.a.x + 20, y: e.a.y + 20 }, { x: e.a.x - 20, y: e.a.y + 20 }]];

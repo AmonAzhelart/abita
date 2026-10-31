@@ -69,7 +69,7 @@ divano a 400,560                          # misure di catalogo
 divano 240x95 a 400,560 ruota 90 colore salvia
 letto 160x200 a 310,115
 cucina 260 a 760,45                        # basi, piano, fuochi, lavello e pensili
-scala 100x300 a 715,560                    # sale fino al piano di sopra
+scala U a 710,630 ruota 180                # scala a U fino al piano di sopra (vedi Scale)
 blocco 60x40x200 a 100,100 colore noce     # volume generico
 \`\`\`
 - \`a x,y\` è il **centro** dell'oggetto.
@@ -79,6 +79,26 @@ blocco 60x40x200 a 100,100 colore noce     # volume generico
 
 Catalogo (L x P x H di serie):
 ${Object.entries(CATALOGO).map(([k, v]) => `- \`${k}\` ${v.L}x${v.P}${v.H ? "x" + v.H : ""} — ${v.desc}`).join("\n")}
+
+## Scale
+
+Una scala si descrive con poche scelte: Abita calcola alzate, pedate, rampe e ingombro, apre da solo il pavimento del piano di sopra e la disegna vera in pianta e in 3D.
+\`\`\`
+scala a 300,400                                   # dritta, sale fino al piano di sopra
+scala U a 710,630 larga 90                        # a U: due rampe col pianerottolo in fondo
+scala L giro sx ventaglio a 400,300               # a L, gira a sinistra con 3 gradini a ventaglio al posto del pianerottolo
+scala U ventaglio pozzo 20 a 500,500              # a U con la svolta tutta a ventaglio, 20 cm di vuoto tra le rampe
+scala pianerottolo prima 8 a 300,400              # dritta, pianerottolo dopo 8 gradini
+scala chiocciola 160 a 200,200                    # a chiocciola, diametro 160
+scala L alzata 18 pedata 27 larga 100 a 400,300   # alzata e pedata scelte da te
+\`\`\`
+- \`forma\` dritta (di serie), \`L\`, \`U\` o \`chiocciola\` (si può scrivere anche subito dopo \`scala\`).
+- \`larga\`: larghezza della rampa (di serie 100; per la chiocciola il diametro si scrive come misura, di serie 160).
+- \`alzata\`: quella che vorresti (di serie 17,5; 20 per la chiocciola). Il numero di alzate è dislivello / alzata arrotondato, poi l'alzata vera viene giusta.
+- \`pedata\`: di serie dalla regola di Blondel, 2 alzate + pedata = 63 cm. Per la chiocciola è la pedata sulla linea di passo.
+- \`giro sx\` o \`giro dx\` (di serie): da che parte gira salendo. \`ventaglio\`: gradini a ventaglio nella svolta. \`pianerottolo\`: per la dritta, spezza la rampa. \`prima\`: quanti gradini prima della svolta. \`pozzo\`: il vuoto tra le rampe a U (di serie 10).
+- \`a x,y\` è il centro dell'ingombro; si parte dal fronte e si sale verso il retro, come per gli arredi (\`ruota 180\`: si parte da nord).
+- Con \`100x300\` la dritta prende larghezza e lunghezza da lì (la pedata si adatta). Abita avvisa se l'alzata è oltre 18,5, la pedata sotto 25, se esce dalla regola di Blondel (62–64), se è più stretta di 80 cm o se una rampa supera 15 alzate.
 
 ## Tetto e misure
 
@@ -107,7 +127,12 @@ ${Object.keys(COLORI).map(c => `\`${c}\``).join(" ")}, oppure un colore esadecim
 
 ## Passaggi
 
-Abita controlla che si possa passare ovunque: **70 cm liberi** dagli ingressi (o dall'arrivo della scala) fino a ogni stanza e davanti a ogni mobile. Porte sotto i 70 cm, mobili chiusi contro il muro, sedie senza spazio dietro vengono segnalati.
+Abita controlla che si possa passare davvero, piano per piano e su e giù per le scale:
+- si cammina dove restano **60 cm liberi**, partendo dalle porte verso l'esterno (non da quelle sulle terrazze sopra altre stanze) e salendo o scendendo per le scale, anche quelle importate col loro buco nel solaio;
+- a ogni stanza ci si deve arrivare; se ci si arriva solo di fianco (tra 45 e 60 cm) viene detto;
+- davanti a ogni mobile serve lo spazio per usarlo: wc, bidet e lavabo 55 cm, doccia e vasca 60, letto 50 di lato, armadio 60, cucina 80, frigo 70, scrivania 70, divano 40;
+- le porte sotto i 60 cm, quelle che aprendosi urtano un mobile o un muro, le scale a cui non si arriva in fondo o che in cima escono contro un muro;
+- gli oggetti importati ingombrano con le parti sotto i 150 cm: sotto travi, pergole e chiome si passa.
 
 ## Consigli per lavorare bene
 

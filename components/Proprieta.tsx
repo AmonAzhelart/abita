@@ -2,7 +2,8 @@
 // Il pannello Proprietà: campi veri per ogni tipo di elemento. Ogni campo riscrive solo il suo pezzo di riga.
 import { useEffect, useRef, useState } from "react";
 import { CATALOGO, COLORI, hex } from "@/lib/arredi";
-import { angoli, area2, cambiaRiga, dentro, imposta, impostaPunti, lati, segmenti, segna, type Arredo, type Elemento, type Modello } from "@/lib/lingua";
+import { area2, cambiaRiga, dentro, imposta, impostaPunti, lati, sagoma, segmenti, segna, type Arredo, type Elemento, type Modello } from "@/lib/lingua";
+import { FORME } from "@/lib/scala";
 
 type Props = {
   M: Modello; el: Elemento; testo: () => string; cambia: (t: string, scrivendo?: boolean) => void;
@@ -20,7 +21,7 @@ function bucoSopra(M: Modello, a: Arredo) {
   const su = pianoSopra(M, a.piano), qui = M.piani.find(p => p.id === a.piano);
   if (!su || !qui) return null;
   if (a.cosa === "scala" && Math.abs(qui.quota + a.H - su.quota) < 40) return { su, come: "da solo" as const };
-  const q = angoli(a), c = q.reduce((s, v) => ({ x: s.x + v.x / 4, y: s.y + v.y / 4 }), { x: 0, y: 0 });
+  const q = sagoma(a), c = { x: a.a.x, y: a.a.y };
   if (M.el.some(f => f.tipo === "foro" && f.piano === su.id && ([...q, c].some(v => dentro(v, f.punti)) || f.punti.some(v => dentro(v, q))))) return { su, come: "foro" as const };
   if (!M.el.some(s => s.tipo === "stanza" && s.piano === su.id && dentro(c, s.punti))) return { su, come: "vuoto" as const };
   return { su, come: "chiuso" as const };
@@ -98,7 +99,7 @@ export function titolo(e: Elemento) {
     case "stanza": return e.nome;
     case "area": return e.nome || "Area esterna";
     case "apertura": return maiuscola(e.cosa);
-    case "arredo": return e.cosa === "modello" ? e.nome : maiuscola(e.cosa);
+    case "arredo": return e.cosa === "modello" ? e.nome : e.scala ? `Scala ${FORME[e.scala.forma]}` : maiuscola(e.cosa);
     case "tetto": return "Tetto";
     case "misura": return "Misura";
     case "foro": return "Buco nel pavimento";
@@ -185,6 +186,47 @@ export default function Proprieta({ M, el, testo, cambia, onChiudi, onElimina, o
           <Numero nome="Alzato da terra" valore={el.quota} onCambia={v => set("quota", v || null)} />
           <Interruttore nome="Copertura" aiuto="Si nasconde quando guardi dentro" on={!!el.copertura} onCambia={on => flag("copertura", on)} />
           <Interruttore nome="Calpestabile" aiuto="Ci si cammina sopra" on={!!el.calpestabile} onCambia={on => flag("calpestabile", on)} />
+          {scala}
+        </>;
+        break;
+      }
+      if (el.scala) {
+        const sc = el.scala, f = sc.forma, ventaglio = sc.gradini.some(g => g.tipo === "ventaglio"), pd = f === "chiocciola" ? sc.passo! : sc.pedata;
+        const su = pianoSopra(M, el.piano), auto = su ? su.quota - (M.piani.find(p => p.id === el.piano)?.quota ?? 0) : null;
+        // la prima modifica porta la riga ai parametri: dalle misure "LxP" resta la larghezza, la pedata torna quella giusta (Blondel)
+        const aggiorna = (fa: (t: string) => string) => {
+          let t = testo();
+          const senza = imposta(t, r, "misure", null);
+          if (senza !== t) t = imposta(senza, r, "larga", String(sc.larga));
+          cambia(fa(t));
+        };
+        const num = (k: string) => (v: number | null) => aggiorna(t => imposta(t, r, k, v === null ? null : String(v)));
+        info = [`ingombro ${Math.round(sc.L)} × ${Math.round(sc.P)} cm`, `sale ${Math.round(el.H)} cm`];
+        campi = <>
+          <div className="forma-scala">
+            <Scelta nome="Forma" valore={f} opzioni={[["dritta", "Dritta"], ["l", "A L"], ["u", "A U"], ["chiocciola", "A chiocciola"]]}
+              onCambia={v => aggiorna(t => imposta(t, r, "forma", v === "dritta" ? null : v === "chiocciola" ? v : v.toUpperCase()))} />
+          </div>
+          {f !== "dritta" && <Scelta nome="Salendo gira a" valore={sc.giro} opzioni={[["sx", "Sinistra"], ["dx", "Destra"]]} onCambia={v => aggiorna(t => imposta(t, r, "giro", v === "dx" ? null : v))} />}
+          {(f === "l" || f === "u") && <Scelta nome="Nella svolta" valore={ventaglio ? "ventaglio" : "pianerottolo"} opzioni={[["pianerottolo", "Pianerottolo"], ["ventaglio", "Gradini a ventaglio"]]}
+            onCambia={v => aggiorna(t => segna(t, r, "ventaglio", v === "ventaglio"))} />}
+          {f === "dritta" && <Interruttore nome="Pianerottolo a metà" aiuto="Spezza la rampa in due" on={sc.rampe.length > 1} onCambia={on => aggiorna(t => segna(t, r, "pianerottolo", on))} />}
+          <div className="campi-2">
+            <Numero nome={f === "chiocciola" ? "Diametro" : "Larghezza"} valore={f === "chiocciola" ? Math.round(sc.L) : sc.larga} min={40}
+              onCambia={v => num("larga")(f === "chiocciola" ? Math.round((v - 14) * 5) / 10 : v)} />
+            <Numero nome="Sale di" valore={Math.round(el.H)} min={20} onCambia={v => num("altezza")(v === auto ? null : v)} />
+            <Numero nome="Alzata" valore={sc.alzata} min={10} passo={0.5} onCambia={num("alzata")} />
+            <Numero nome={f === "chiocciola" ? "Pedata al passo" : "Pedata"} valore={sc.pedata} min={15} onCambia={num("pedata")} />
+            {sc.prima >= 0 && <Numero nome={f === "dritta" ? "Gradini prima" : "Prima della svolta"} valore={sc.prima} unita="" onCambia={v => num("prima")(Math.round(v))} />}
+            {f === "u" && <Numero nome="Pozzo" valore={sc.pozzo ?? 10} onCambia={num("pozzo")} />}
+          </div>
+          <div className={"scala-conti" + (sc.avvisi.length ? " con-avvisi" : "")}>
+            <b>{sc.alzate} alzate da {String(sc.alzata).replace(".", ",")} cm, pedata {String(pd).replace(".", ",")} cm</b>
+            <span>2 alzate + pedata = {String(Math.round((2 * sc.alzata + pd) * 10) / 10).replace(".", ",")} cm{sc.rampe.length > 1 ? ` · rampe da ${sc.rampe.join(" e ")} alzate` : ""}{ventaglio && sc.passo ? ` · ventaglio ${String(sc.passo).replace(".", ",")} cm sulla linea di passo` : ""}</span>
+            {sc.avvisi.length ? <ul>{sc.avvisi.map(a => <li key={a}>{a}</li>)}</ul> : <span className="ok">Comoda: rispetta la regola di Blondel (62–64 cm)</span>}
+          </div>
+          <Ruota gradi={el.ruota} onCambia={v => set("ruota", v || null)} />
+          <Tavolozza nome="Pedate" valore={el.colore} onCambia={v => set("colore", v)} />
           {scala}
         </>;
         break;

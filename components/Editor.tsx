@@ -304,7 +304,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
     return () => window.removeEventListener("keydown", k);
   });
 
-  const es = useMemo(() => (vediPassaggi ? passaggi(M, piano) : null), [vediPassaggi, M, piano]);
+  const es = useMemo(() => (vediPassaggi ? passaggi(M, piano, mesh) : null), [vediPassaggi, M, piano, mesh]);
   const appunti = useMemo(() => p.appunti.map((a, i) => ({ ...a, n: i + 1 })), [p.appunti]);
   const visibili = appunti.filter(a => filtro === "tutti" || a.stato === "da fare").slice().reverse();
   const ultimoClaude = p.attivita.find(a => a.chi === "claude")?.quando;

@@ -61,7 +61,7 @@ export const CATALOGO: Record<string, Voce> = {
   pianta: { L: 45, P: 45, H: 120, colore: "verde", desc: "pianta in vaso", accesso: "no" },
   lampada: { L: 40, P: 40, H: 160, colore: "lino", desc: "lampada da terra", accesso: "no" },
   camino: { L: 120, P: 40, H: 110, colore: "pietra", desc: "camino", accesso: "fronte" },
-  scala: { L: 100, P: 300, H: 0, colore: "rovere", desc: "scala: L larghezza, P lunghezza; sale verso il retro, si parte dal fronte. altezza = quanto sale (di serie fino al piano sopra)", accesso: "fronte" },
+  scala: { L: 100, P: 300, H: 0, colore: "rovere", desc: "scala: si parte dal fronte e si sale verso il retro, fino al piano di sopra. forma dritta/L/U/chiocciola, larga, alzata, pedata, giro sx/dx, ventaglio, pianerottolo, prima, pozzo (vedi Scale)", accesso: "fronte" },
   blocco: { L: 100, P: 100, H: 100, colore: "bianco", desc: "volume generico", accesso: "no" },
 };
 
@@ -140,10 +140,6 @@ export function pezzi(cosa: string, L: number, P: number, H: number, c: string):
     case "pianta": { const d = Math.min(L, P); return [C("cotto", 0, 0, 0, d * 0.6, 35), C(c, 0, 0, 35, d, Math.max(10, H - 55)), C(c, 0, 0, H - 20, d * 0.7, 20)]; }
     case "lampada": return [C("antracite", 0, 0, 0, 28, 3), C("ottone", 0, 0, 3, 2.5, H - 40), C(c, 0, 0, H - 40, Math.min(L, P), 35)];
     case "camino": return [B(c, 0, 0, 0, L, P, H), B("nero", 0, P / 2 - 8, 15, L * 0.55, 16.5, H * 0.45), B("fuoco", 0, P / 2 - 10, 16, L * 0.3, 10, 8)];
-    case "scala": {
-      const n = Math.max(2, Math.round(H / 17.5)), r = H / n, t = P / n;
-      return Array.from({ length: n }, (_, i) => B(c, 0, P / 2 - t * (i + 0.5), 0, L, t, r * (i + 1)));
-    }
     default: return [B(c, 0, 0, 0, L, P, H)];
   }
 }

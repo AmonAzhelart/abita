@@ -1,7 +1,7 @@
 // Controllo veloce della lingua: node lib/lingua.check.ts (npm run verifica)
 import assert from "node:assert/strict";
 import { ESEMPIO } from "./esempio.ts";
-import { aggiungi, dentro, imposta, impostaPunti, leggi, segna, righeCambiate, sposta, type Apertura, type Arredo, type Stanza } from "./lingua.ts";
+import { aggiungi, area2, dentro, imposta, impostaPunti, leggi, segna, righeCambiate, sposta, type Apertura, type Arredo, type Stanza } from "./lingua.ts";
 import { passaggi, testoPassaggi } from "./passaggi.ts";
 import { muroInCorso } from "./scena.ts";
 import { ancora } from "./ancora.ts";
@@ -31,6 +31,28 @@ assert.match(T.errori[1].msg, /colore "blu_scuro"/);
 // un divano bloccato contro il muro viene segnalato
 const B = leggi("piano Terra\nmuro 0,0 >300 v300 <300 chiudi spessore 20\nstanza Sala 10,10 290,290\nporta 80 a 150,300\ndivano 200x90 a 150,55 ruota 180");
 assert.match(passaggi(B, "terra")!.problemi.map(p => p.msg).join(), /divano .*davanti/);
+
+// una porta che aprendosi sbatte contro un mobile; un piano a cui non porta nessuna scala
+const U = leggi(`piano Terra
+muro 0,0 >400 v300 <400 chiudi spessore 20
+stanza Sala 10,10 390,290
+porta 80 a 200,300 verso Sala
+armadio 100x60 a 200,250 ruota 180
+piano Primo
+muro 0,0 >400 v300 <400 chiudi spessore 20
+stanza Camera 10,10 390,290`);
+assert.match(passaggi(U, "terra")!.problemi.map(p => p.msg).join(), /aprendosi urta armadio/);
+assert.match(passaggi(U, "primo")!.problemi.map(p => p.msg).join(), /Primo: non ci si arriva/);
+// con la scala si sale: il piano di sopra è raggiunto e in cima si esce sul pavimento
+const S2 = leggi(`piano Terra altezza 270
+muro 0,0 >600 v500 <600 chiudi spessore 20
+stanza Sala 10,10 590,490
+porta 90 a 300,500
+scala U a 150,250
+piano Primo
+muro 0,0 >600 v500 <600 chiudi spessore 20
+stanza Camera 10,10 590,490`);
+assert.deepEqual(passaggi(S2, "primo")!.problemi.map(p => p.msg), [], testoPassaggi(S2, "primo"));
 
 // modifiche che toccano solo il necessario
 let t = "piano Terra\n  divano a 100,100 # vicino alla finestra\n  muro 0,0 >300 v200";
@@ -75,4 +97,21 @@ assert.equal(ancora(M, div, { x: 70, y: 140 }).facce.length, 2);
 const tav = M.el.find((e): e is Arredo => e.tipo === "arredo" && e.cosa === "tavolo")!;
 assert.deepEqual([ancora(M, tav, { x: 300, y: 70 }).c, ancora(M, tav, { x: 300, y: 70 }).ruota], [{ x: 300, y: 60 }, 0]);
 assert.deepEqual(ancora(M, tav, { x: 300, y: 300 }).facce, [], "lontano dai muri resta dov'è");
+// scale: alzate e pedate vere (Blondel), forme, svolte e specchio
+const scl = (r: string) => leggi(`piano Terra
+${r}
+piano Primo`).el.find((e): e is Arredo => e.tipo === "arredo")!;
+const dritta = scl("scala a 0,0").scala!;
+assert.deepEqual([dritta.alzate, dritta.alzata, dritta.pedata, dritta.L, dritta.P], [17, 17.6, 27.7, 100, 443.2], "300 cm: 17 alzate, pedata da 63 - 2a");
+const u = scl("scala U a 0,0");
+assert.deepEqual([u.L, u.P, u.scala!.rampe, u.scala!.avvisi], [210, 321.6, [9, 8], []], "a U: due rampe col pianerottolo, comoda");
+assert.equal(Math.abs(area2(u.scala!.sagoma)), 62550, "la sagoma a U: le due rampe e il pianerottolo");
+const lv = scl("scala forma L ventaglio giro sx a 0,0").scala!, spicchi = lv.gradini.filter(g => g.tipo === "ventaglio");
+assert.equal(spicchi.length, 3);
+assert.ok(Math.abs(spicchi.reduce((t, g) => t + Math.abs(area2(g.poli)), 0) - 100 * 100) < 20, "i ventagli riempiono il quadrato della svolta");
+assert.ok(lv.gradini[0].poli.every(q => q.x > 0), "gira a sinistra: si parte dal lato destro");
+const ch = scl("scala chiocciola 160 a 0,0");
+assert.deepEqual([ch.scala!.forma, ch.L, ch.P, ch.scala!.alzata, ch.scala!.avvisi], ["chiocciola", 160, 160, 20, []]);
+assert.match(scl("scala 100x300 a 0,0").scala!.avvisi.join(), /pedata 18,8 cm: corta/, "100x300 per 3 metri è troppo ripida");
+assert.equal(imposta("scala 100x300 a 715,560", 0, "misure", null), "scala a 715,560");
 console.log("lingua ok");

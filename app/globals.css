@@ -353,3 +353,12 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6
 
 /* ancoraggio: la faccia del muro a cui si appoggia l'arredo che stai trascinando */
 .faccia-ancora { stroke: var(--accent); stroke-width: 4px; stroke-linecap: round; vector-effect: non-scaling-stroke; opacity: 0.85; pointer-events: none; }
+
+/* le scale: i conti e gli avvisi sotto i campi */
+.scala-conti { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 7%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); font-size: 13px; }
+.scala-conti b { font-weight: 600; }
+.scala-conti > span { color: var(--muted); }
+.scala-conti .ok { color: #2f9e44; }
+.scala-conti ul { margin: 2px 0 0; padding-left: 18px; color: #c2410c; }
+.scala-conti.con-avvisi { background: color-mix(in srgb, #d9480f 7%, transparent); border-color: color-mix(in srgb, #d9480f 28%, transparent); }
+.forma-scala .segmenti { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }

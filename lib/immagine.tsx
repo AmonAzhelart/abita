@@ -1,13 +1,13 @@
 // La pianta come PNG per Claude: la geometria è un SVG, le scritte le mette satori (resvg da solo non ha font).
 import { ImageResponse } from "next/og";
 import type { Modello } from "./lingua.ts";
-import { passaggi } from "./passaggi.ts";
+import { passaggi, type Triangoli } from "./passaggi.ts";
 import { CHIARO, disegnaPianta, riquadro } from "./pianta.ts";
 import type { Appunto } from "./progetti.ts";
 
-export async function pngPianta(M: Modello, piano: string, o: { quote?: boolean; passaggi?: boolean; appunti?: Appunto[]; titolo?: string }) {
+export async function pngPianta(M: Modello, piano: string, o: { quote?: boolean; passaggi?: boolean; appunti?: Appunto[]; titolo?: string; mesh?: Triangoli }) {
   const b = riquadro(M, piano), k = Math.min(1400 / b.w, 1100 / b.h), W = Math.round(b.w * k), H = Math.round(b.h * k), TESTA = 44;
-  const es = o.passaggi ? passaggi(M, piano) : null;
+  const es = o.passaggi ? passaggi(M, piano, o.mesh) : null;
   const { svg, etichette } = disegnaPianta(M, { piano, colori: CHIARO, quote: o.quote, passaggi: es, testo: false });
   const note = (o.appunti ?? []).map((a, i) => ({ a, n: i + 1 })).filter(x => x.a.piano === piano);
   let extra = "";

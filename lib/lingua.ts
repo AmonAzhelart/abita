@@ -2,6 +2,7 @@
 // leggi() trasforma il testo in un modello; le funzioni di modifica cambiano solo i pezzi di riga che servono,
 // così il testo resta come l'hanno scritto Claude o la persona.
 import { CATALOGO, COLORI, coloreValido } from "./arredi.ts";
+import { FORME, progettaScala, type Scala, type Scelte } from "./scala.ts";
 
 export type Pt = { x: number; y: number };
 export type Piano = { id: string; nome: string; quota: number; altezza: number; solaio: number; riga: number };
@@ -14,7 +15,7 @@ export type Apertura = Base & {
   tipo: "apertura"; cosa: "porta" | "finestra" | "portafinestra" | "varco"; a: Pt; larga: number; alta: number; davanzale: number;
   scorrevole: boolean; cardine: "sx" | "dx"; verso: string; aggancio?: Aggancio;
 };
-export type Arredo = Base & { tipo: "arredo"; cosa: string; nome: string; a: Pt; L: number; P: number; H: number; ruota: number; colore: string; quota: number; copertura?: boolean; calpestabile?: boolean };
+export type Arredo = Base & { tipo: "arredo"; cosa: string; nome: string; a: Pt; L: number; P: number; H: number; ruota: number; colore: string; quota: number; copertura?: boolean; calpestabile?: boolean; scala?: Scala };
 export type Tetto = Base & { tipo: "tetto"; punti: Pt[]; falde: number; altezza: number; sporto: number; colore: string; colmo: "x" | "y" };
 export type Misura = Base & { tipo: "misura"; punti: Pt[] };
 export type Foro = Base & { tipo: "foro"; punti: Pt[] };
@@ -31,9 +32,10 @@ const PT = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/;
 const PASSO = /^([<>^v])(\d+(?:\.\d+)?)$/;
 const MIS = /^\d+(?:\.\d+)?(?:x\d+(?:\.\d+)?){0,2}$/;
 
-const PAR_NUM: Record<string, string> = { spessore: "spessore", altezza: "altezza", alto: "altezza", alta: "altezza", quota: "quota", solaio: "solaio", ruota: "ruota", davanzale: "davanzale", sporto: "sporto", falde: "falde", fino: "fino" };
-const PAR_PAROLA: Record<string, string> = { colore: "colore", materiale: "colore", pavimento: "colore", verso: "verso", cardine: "cardine", colmo: "colmo" };
-const FLAG = new Set(["chiudi", "chiuso", "scorrevole", "piano", "copertura", "calpestabile"]);
+const PAR_NUM: Record<string, string> = { spessore: "spessore", altezza: "altezza", alto: "altezza", alta: "altezza", quota: "quota", solaio: "solaio", ruota: "ruota", davanzale: "davanzale", sporto: "sporto", falde: "falde", fino: "fino",
+  larga: "larga", larghezza: "larga", alzata: "alzata", pedata: "pedata", prima: "prima", pozzo: "pozzo" };
+const PAR_PAROLA: Record<string, string> = { colore: "colore", materiale: "colore", pavimento: "colore", verso: "verso", cardine: "cardine", colmo: "colmo", forma: "forma", giro: "giro" };
+const FLAG = new Set(["chiudi", "chiuso", "scorrevole", "piano", "copertura", "calpestabile", "ventaglio", "pianerottolo"]);
 export const APERTURE: Record<string, [number, number, number]> = { porta: [80, 210, 0], finestra: [120, 140, 90], portafinestra: [140, 240, 0], varco: [90, 210, 0] };
 const ALIAS: Record<string, string> = {
   livello: "piano", locale: "stanza", vano: "stanza", terrazza: "area", prato: "giardino", apertura: "varco",
@@ -132,7 +134,7 @@ export function leggi(testo: string, modelli: Record<string, ModelloInfo> = {}):
     err.push({ riga, msg: `colore "${c}" sconosciuto` + forse(c, Object.keys(COLORI)) });
     return def;
   };
-  const scaleAuto: Arredo[] = [];
+  const scaleAuto: Arredo[] = [], scelte = new Map<Arredo, Omit<Scelte, "H">>();
 
   righe.forEach((r, i) => {
     const toks = tokenizza(r);
@@ -215,7 +217,14 @@ export function leggi(testo: string, modelli: Record<string, ModelloInfo> = {}):
       const p = piano(), a = pos();
       if (!a) { err.push({ riga: i, msg: `${k}: scrivi dove sta il centro, per esempio "a 200,150"` }); return; }
       const ar: Arredo = { tipo: "arredo", riga: i, piano: p.id, cosa: k, nome: A.nome ?? "", a, L: A.mis?.[0] ?? v.L, P: A.mis?.[1] ?? v.P, H: A.mis?.[2] ?? A.n.altezza ?? v.H, ruota: (((A.n.ruota ?? 0) % 360) + 360) % 360, colore: colore(A, i, v.colore), quota: A.n.quota ?? 0 };
-      if (k === "scala" && !ar.H) scaleAuto.push(ar);
+      if (k === "scala") {
+        let forma = A.w.forma;
+        if (!forma && A.nome && /^(dritta|l|u|chiocciola)$/i.test(A.nome) && !toks.some(t => t.q)) { forma = A.nome.toLowerCase(); ar.nome = ""; }   // "scala U a …"
+        if (forma && !(forma in FORME)) err.push({ riga: i, msg: `forma "${forma}": scrivi dritta, L, U o chiocciola` });
+        if (A.w.giro && A.w.giro !== "sx" && A.w.giro !== "dx") err.push({ riga: i, msg: `giro "${A.w.giro}": scrivi sx o dx` });
+        scelte.set(ar, { forma, giro: A.w.giro, larga: A.n.larga, alzata: A.n.alzata, pedata: A.n.pedata, prima: A.n.prima, pozzo: A.n.pozzo, ventaglio: A.f.has("ventaglio"), pianerottolo: A.f.has("pianerottolo"), L: A.mis?.[0], P: A.mis?.[1] });
+        if (!ar.H) scaleAuto.push(ar);
+      }
       M.el.push(ar);
       return;
     }
@@ -225,6 +234,11 @@ export function leggi(testo: string, modelli: Record<string, ModelloInfo> = {}):
   for (const s of scaleAuto) {                         // la scala sale fino al piano di sopra
     const p = M.piani.find(q => q.id === s.piano)!, su = M.piani.filter(q => q.quota > p.quota).sort((a, b) => a.quota - b.quota)[0];
     s.H = su ? su.quota - p.quota : p.altezza + p.solaio;
+  }
+  for (const [s, o] of scelte) {                       // i gradini veri: l'ingombro viene da forma, larghezza e pedata
+    s.scala = progettaScala({ ...o, H: s.H });
+    s.L = s.scala.L;
+    s.P = s.scala.P;
   }
   aggancia(M);
   return M;
@@ -277,6 +291,8 @@ export const locale = (a: Arredo, x: number, y: number): Pt => {
   const c = Math.cos((a.ruota * Math.PI) / 180), s = Math.sin((a.ruota * Math.PI) / 180);
   return { x: a.a.x + x * c - y * s, y: a.a.y + x * s + y * c };
 };
+/** Quello che occupa in pianta: la sagoma vera per le scale (a L, a U, chiocciola), il rettangolo per il resto. */
+export const sagoma = (a: Arredo): Pt[] => (a.scala ? a.scala.sagoma.map(p => locale(a, p.x, p.y)) : angoli(a));
 
 /** Le aperture che tagliano un tratto di muro a→b: anche quelle agganciate a un tratto vicino sulla stessa linea
  *  (muri spezzati, per esempio al colmo). s0, s1 sono misurati lungo a→b. */
@@ -345,7 +361,7 @@ export function etichetta(e: Elemento) {
     case "stanza": return `stanza ${e.nome}`;
     case "area": return e.nome || (e.colore === "prato" ? "giardino" : "area");
     case "apertura": return `${e.cosa} ${e.larga}`;
-    case "arredo": return e.cosa === "modello" ? `"${e.nome}"` : e.nome ? `${e.cosa} "${e.nome}"` : e.cosa.replace("_", " ");
+    case "arredo": return e.cosa === "modello" ? `"${e.nome}"` : e.nome ? `${e.cosa} "${e.nome}"` : e.scala ? `scala ${FORME[e.scala.forma]}` : e.cosa.replace("_", " ");
     case "tetto": return e.falde ? `tetto a ${e.falde} falde` : "tetto piano";
     case "misura": return "misura";
     case "foro": return "foro nel solaio";
@@ -430,7 +446,7 @@ export function imposta(testo: string, riga: number, chiave: string, valore: str
   const toks = tokenizza(s), fine = toks.length ? toks[toks.length - 1].e : s.length;
   if (chiave === "misure") {
     const t = toks.find((t, k) => k > 0 && !t.q && MIS.test(t.t) && !(toks[k - 1].t.toLowerCase() in PAR_NUM));
-    if (t) s = s.slice(0, t.s) + (valore ?? "") + s.slice(t.e);
+    if (t) s = valore ? s.slice(0, t.s) + valore + s.slice(t.e) : s.slice(0, t.s).replace(/[ \t]+$/, "") + s.slice(t.e);
     else if (valore) s = s.slice(0, toks[0].e) + " " + valore + s.slice(toks[0].e);
   } else {
     const i = toks.findIndex((t, k) => k > 0 && !t.q && t.t.toLowerCase() === chiave && toks[k + 1]);
