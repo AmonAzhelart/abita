@@ -198,6 +198,12 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
     setSel(null);
     mostra(`Eliminato: ${e ? titolo(e) : "elemento"}`, false, ["Annulla", annulla]);
   };
+  /** Un arredo lasciato in pianta o in 3D: si sposta e, se l'ancoraggio a un muro l'ha girato, prende la nuova rotazione. */
+  const posa = (riga: number, dx: number, dy: number, gr?: number) => {
+    let t = sposta(R.current.testo, riga, dx, dy);
+    if (gr !== undefined) t = imposta(t, riga, "ruota", gr ? String(gr) : null);
+    cambia(t);
+  };
   const duplica = (riga: number) => nuovaRiga(sposta(M.righe[riga].trim(), 0, 30, 30));
   const incolla = () => { if (!copiato.current) return; const r = sposta(copiato.current, 0, 30, 30); copiato.current = r; nuovaRiga(r); };
   const bucoScala = (a: Arredo) => {
@@ -444,7 +450,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
         {vista !== "3d" && <section className="lato lato-pianta" aria-label="Pianta">
           <Pianta modello={M} piano={piano} quote={quote} passaggi={es} modifica strumento={strumento} modoAppunto={modoAppunto} sel={sel} evid={evid}
             appunti={appunti} notaSel={notaSel} foto={p.foto} fotoAttiva={fotoAttiva} centra={centra} adatta={adatta}
-            onSel={scegli} onSposta={(r, x, y) => cambia(sposta(R.current.testo, r, x, y))}
+            onSel={scegli} onSposta={posa}
             onVertici={(r, pts) => cambia(impostaPunti(R.current.testo, r, pts))} onDisegna={disegnato}
             muro={{ spessore: opzMuro.spessore, a: hA, b: hB }} onBozza={setInCorso}
             onRuota={(r, gr) => cambia(imposta(R.current.testo, r, "ruota", gr ? String(gr) : null))}
@@ -487,7 +493,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
           aria-valuemin={25} aria-valuemax={75} aria-valuenow={Math.round(parte * 100)} onPointerDown={trascinaDivisore} onKeyDown={tastoDivisore}
           onDoubleClick={() => { setParte(0.5); ricorda("parte", "0.5"); }} />}
         {vista !== "pianta" && <section className="lato lato-3d" aria-label="Vista 3D">
-          <Vista3D modello={M} mesh={mesh} piano={piano} tetto={tetto} nomi volo={volo} onStanza={r => { setVolo({ tipo: "stanza", riga: r, n: Date.now() }); scegli(r); }} traccia={traccia} sel={sel} />
+          <Vista3D modello={M} mesh={mesh} piano={piano} tetto={tetto} nomi volo={volo} onStanza={r => { setVolo({ tipo: "stanza", riga: r, n: Date.now() }); scegli(r); }} traccia={traccia} sel={sel} onSel={scegli} onPosa={posa} />
           {vista === "divisa" && <div className="galleggia comandi-3d">{comandi3D}</div>}
         </section>}
         <div className="galleggia alto">

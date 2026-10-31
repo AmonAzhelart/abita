@@ -34,8 +34,10 @@ export function lastra(pts: Pt[], top: number, spessore: number, buchi: Pt[][] =
   g.translate(0, top / 100, 0);
   return g;
 }
+/** I triangoli di un elemento dentro una mesh unita (vertici da..a): servono a sceglierlo e a spostarlo in 3D. */
+export type Parte = { mesh: THREE.Mesh; da: number; a: number };
 export type Scena = {
-  piani: Map<string, THREE.Group>; tetti: THREE.Group;
+  piani: Map<string, THREE.Group>; tetti: THREE.Group; parti: Map<number, Parte[]>;
   stanze: { nome: string; area: number; piano: string; pos: THREE.Vector3; riga: number }[];
   centro: THREE.Vector3; raggio: number; dispose: () => void;
 };
@@ -57,15 +59,21 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
   const piani = new Map<string, THREE.Group>(), tetti = new THREE.Group(), geoms: THREE.BufferGeometry[] = [];
   const minQ = Math.min(...M.piani.map(p => p.quota));
   const stanze: Scena["stanze"] = [];
+  const parti = new Map<number, Parte[]>();
+  const misure = (buf: Buf) => new Map([...buf].map(([k, v]) => [k, v.length]));
 
   for (const P of M.piani) {
     const grp = new THREE.Group(), b: Buf = new Map(), bt: Buf = new Map(), el = M.el.filter(e => e.piano === P.id);
     grp.name = P.id;
     const piede = P.quota === minQ ? 4 : P.solaio;
+    const segnati: { riga: number; buf: Buf; k: string; da: number; a: number }[] = [];
+    const registra = (riga: number, buf: Buf, prima: Map<string, number>) => {
+      for (const [k, v] of buf) { const da = prima.get(k) ?? 0; if (v.length > da) segnati.push({ riga, buf, k, da: da / 3, a: v.length / 3 }); }
+    };
 
     for (const m of el) {
       if (m.tipo !== "muro") continue;
-      const mi = M.el.indexOf(m), segs = segmenti(m), lun = segs.map(([a, c]) => Math.hypot(c.x - a.x, c.y - a.y));
+      const prima = misure(b), segs = segmenti(m), lun = segs.map(([a, c]) => Math.hypot(c.x - a.x, c.y - a.y));
       const tot = lun.reduce((x, y) => x + y, 0) || 1;
       let inizio = 0;
       segs.forEach(([a, c], seg) => {
@@ -93,13 +101,14 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
           }
         }
       });
+      registra(m.riga, b, prima);
     }
 
     for (const a of el) {
       if (a.tipo !== "arredo") continue;
       const c = Math.cos((a.ruota * Math.PI) / 180), s = Math.sin((a.ruota * Math.PI) / 180);
+      const dove = a.cosa === "modello" && a.copertura ? bt : b, prima = misure(dove);   // le coperture vanno con i tetti: si nascondono guardando dentro
       if (a.cosa === "modello") {
-        const dove = a.copertura ? bt : b;                   // le coperture vanno con i tetti: si nascondono guardando dentro
         for (const [k, v] of Object.entries(mesh[a.nome] ?? {})) {
           const out: number[] = [];
           for (let i = 0; i < v.length; i += 3) out.push(...W(a.a.x + v[i] * c - v[i + 1] * s, a.a.y + v[i] * s + v[i + 1] * c, P.quota + a.quota + v[i + 2]));
@@ -107,15 +116,15 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
           if (!arr) dove.set(k, (arr = []));
           for (const x of out) arr.push(x);
         }
-        continue;
-      }
-      for (const p of pezzi(a.cosa, a.L, a.P, a.H, a.colore)) {
+      } else for (const p of pezzi(a.cosa, a.L, a.P, a.H, a.colore)) {
         const x = a.a.x + p.x * c - p.y * s, y = a.a.y + p.x * s + p.y * c, z = P.quota + a.quota + p.z;
         if (p.cil) cilindro(b, p.m, x, y, z, p.sx, p.sz);
         else scatola(b, p.m, x, y, z, p.sx, p.sy, p.sz, c, s);
       }
+      registra(a.riga, dove, prima);
     }
 
+    const fatte = new Map<Buf, Map<string, THREE.Mesh>>([[b, new Map()], [bt, new Map()]]);
     for (const [buf, dest] of [[b, grp], [bt, tetti]] as const) for (const [k, v] of buf) {
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
@@ -124,6 +133,12 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
       const m3 = new THREE.Mesh(g, mat(k));
       if ((mat(k) as THREE.MeshLambertMaterial).transparent) m3.renderOrder = 2;
       dest.add(m3);
+      fatte.get(buf)!.set(k, m3);
+    }
+    for (const t of segnati) {                                   // ogni mesh sa di chi sono i suoi triangoli
+      const m3 = fatte.get(t.buf)!.get(t.k)!;
+      ((m3.userData.righe ??= []) as { da: number; a: number; riga: number }[]).push({ da: t.da, a: t.a, riga: t.riga });
+      parti.set(t.riga, [...(parti.get(t.riga) ?? []), { mesh: m3, da: t.da, a: t.a }]);
     }
 
     const scale = M.el.filter((s): s is Arredo => s.tipo === "arredo" && s.cosa === "scala" && s.piano !== P.id &&
@@ -137,10 +152,12 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
         }) : [];
         const g = lastra(e.punti, P.quota + (e.tipo === "area" && e.colore === "prato" ? -1 : 0), e.tipo === "stanza" ? 4 : 3, buchi);
         geoms.push(g);
-        grp.add(new THREE.Mesh(g, mat(e.colore)));
+        const pav = new THREE.Mesh(g, mat(e.colore));
+        pav.userData.riga = e.riga;
+        grp.add(pav);
         if (e.tipo === "stanza") stanze.push({ nome: e.nome, area: e.area, piano: P.id, riga: e.riga, pos: new THREE.Vector3(e.centro.x / 100, (P.quota + 90) / 100, e.centro.y / 100) });
       }
-      if (e.tipo === "tetto") tetti.add(tetto(e, P.quota + P.altezza, mat, geoms));
+      if (e.tipo === "tetto") { const t = tetto(e, P.quota + P.altezza, mat, geoms); t.traverse(o => { o.userData.riga = e.riga; }); tetti.add(t); }
     }
     piani.set(P.id, grp);
   }
@@ -149,7 +166,7 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
   for (const g of piani.values()) box.expandByObject(g);
   const centro = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
   const raggio = box.isEmpty() ? 8 : Math.max(4, box.getSize(new THREE.Vector3()).length() / 2);
-  return { piani, tetti, stanze, centro, raggio, dispose: () => { geoms.forEach(g => g.dispose()); mats.forEach(m => m.dispose()); } };
+  return { piani, tetti, parti, stanze, centro, raggio, dispose: () => { geoms.forEach(g => g.dispose()); mats.forEach(m => m.dispose()); } };
 }
 
 /** Il muro che stai tirando in pianta: stessi conti dei muri veri (altezza da h0 a h1 lungo tutta la linea), senza porte né finestre. */

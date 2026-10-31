@@ -350,3 +350,6 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6
 /* pianta: quello che puoi prendere si accende sotto il cursore */
 .pianta:not(.disegno) :is(.arredo, .apertura, .muro, .foro):hover { filter: drop-shadow(0 0 1.2px var(--accent)) drop-shadow(0 0 1.2px var(--accent)); }
 .pianta:not(.disegno) :is(.stanza, .area):hover > * { stroke: var(--accent) !important; stroke-width: 2px !important; vector-effect: non-scaling-stroke; }
+
+/* ancoraggio: la faccia del muro a cui si appoggia l'arredo che stai trascinando */
+.faccia-ancora { stroke: var(--accent); stroke-width: 4px; stroke-linecap: round; vector-effect: non-scaling-stroke; opacity: 0.85; pointer-events: none; }

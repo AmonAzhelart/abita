@@ -4,6 +4,7 @@ import { ESEMPIO } from "./esempio.ts";
 import { aggiungi, dentro, imposta, impostaPunti, leggi, segna, righeCambiate, sposta, type Apertura, type Arredo, type Stanza } from "./lingua.ts";
 import { passaggi, testoPassaggi } from "./passaggi.ts";
 import { muroInCorso } from "./scena.ts";
+import { ancora } from "./ancora.ts";
 
 const M = leggi(ESEMPIO);
 assert.deepEqual(M.errori, [], "l'esempio non deve avere errori");
@@ -67,4 +68,11 @@ assert.equal(segna("muro 0,0 >10 chiuso spessore 9", 0, "chiudi", false), "muro 
 const fant = muroInCorso([{ x: 0, y: 0 }, { x: 400, y: 0 }], 0, 20, 100, 300);
 fant.computeBoundingBox();
 assert.deepEqual([fant.boundingBox!.min.x, fant.boundingBox!.max.x, fant.boundingBox!.min.y, fant.boundingBox!.max.y].map(v => +v.toFixed(2)), [-0.1, 4.1, 0, 3]);
+// ancoraggio: il divano va col retro al muro ovest e scivola nell'angolo nord; il tavolo si appoggia senza girarsi
+const div = M.el.find((e): e is Arredo => e.tipo === "arredo" && e.cosa === "divano")!;
+assert.deepEqual(ancora(M, div, { x: 70, y: 140 }), { c: { x: 62.5, y: 135 }, ruota: 270, facce: ancora(M, div, { x: 70, y: 140 }).facce });
+assert.equal(ancora(M, div, { x: 70, y: 140 }).facce.length, 2);
+const tav = M.el.find((e): e is Arredo => e.tipo === "arredo" && e.cosa === "tavolo")!;
+assert.deepEqual([ancora(M, tav, { x: 300, y: 70 }).c, ancora(M, tav, { x: 300, y: 70 }).ruota], [{ x: 300, y: 60 }, 0]);
+assert.deepEqual(ancora(M, tav, { x: 300, y: 300 }).facce, [], "lontano dai muri resta dov'è");
 console.log("lingua ok");

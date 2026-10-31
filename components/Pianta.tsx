@@ -3,6 +3,7 @@
 // trascina un elemento per spostarlo. Gli attrezzi di disegno restituiscono punti in cm al genitore.
 // Muro: clic per gli angoli, scrivi una misura e Invio per un tratto esatto, Backspace o tasto destro toglie l'ultimo punto.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ancora } from "@/lib/ancora";
 import { distSeg, segmenti, type Arredo, type Modello, type Muro, type Pt } from "@/lib/lingua";
 import type { Esito } from "@/lib/passaggi";
 import { contorno, disegnaPianta, riquadro } from "@/lib/pianta";
@@ -15,7 +16,7 @@ type Props = {
   strumento?: Strumento; modoAppunto?: "punto" | "linea" | "zona"; muro?: OpzMuro;
   sel?: number | null; evid?: number[]; appunti?: (Appunto & { n: number })[]; notaSel?: string | null;
   foto?: Foto[]; fotoAttiva?: string | null; centra?: { p: Pt; n: number }; adatta?: number;
-  onSel?: (riga: number | null) => void; onSposta?: (riga: number, dx: number, dy: number) => void;
+  onSel?: (riga: number | null) => void; onSposta?: (riga: number, dx: number, dy: number, ruota?: number) => void;
   onVertici?: (riga: number, punti: Pt[]) => void; onDisegna?: (cosa: Strumento, punti: Pt[]) => void;
   onRuota?: (riga: number, gradi: number) => void; onBozza?: (attiva: boolean) => void; onTraccia?: (punti: Pt[] | null) => void;
   onNota?: (id: string) => void; onFoto?: (fid: string, campi: Partial<Foto>) => void;
@@ -41,7 +42,7 @@ export default function Pianta(p: Props) {
   const [pos, setPos] = useState<Pt | null>(null);
   const [pts, setPts] = useState<Pt[]>([]);                         // punti del disegno in corso
   const [dig, setDig] = useState("");                               // misura scritta a tastiera mentre tiri un muro
-  const [drag, setDrag] = useState<{ riga: number; dx: number; dy: number } | null>(null);
+  const [drag, setDrag] = useState<{ riga: number; dx: number; dy: number; ruota?: number; facce?: [Pt, Pt][] } | null>(null);   // ruota: l'ancoraggio a un muro lo ha girato
   const [vert, setVert] = useState<{ riga: number; i: number; punti: Pt[] } | null>(null);
   const [giro, setGiro] = useState<{ riga: number; gradi: number } | null>(null);
   const [fotoDrag, setFotoDrag] = useState<{ fid: string; x: number; y: number } | null>(null);
@@ -138,6 +139,11 @@ export default function Pianta(p: Props) {
   });
 
   const selEl = p.sel != null ? M.el.find(x => x.riga === p.sel) : undefined;
+  /** Spostamento di un elemento trascinato, con la rotazione intorno al suo centro se l'ancoraggio lo ha girato. */
+  const trasforma = (d: { riga: number; dx: number; dy: number; ruota?: number }) => {
+    const a = M.el.find(x => x.riga === d.riga);
+    return `translate(${d.dx} ${d.dy})` + (d.ruota !== undefined && a?.tipo === "arredo" ? ` rotate(${d.ruota - a.ruota} ${a.a.x} ${a.a.y})` : "");
+  };
   const arredoSel = selEl?.tipo === "arredo" ? (selEl as Arredo) : undefined;
 
   function giu(e: React.PointerEvent<SVGSVGElement>) {
@@ -198,7 +204,16 @@ export default function Pianta(p: Props) {
     }
     if (!G.mosso || !modifica && G.tipo !== "foto") return;
     const passo = e.altKey ? 1 : 5, dx = Math.round((q.x - G.p0.x) / passo) * passo, dy = Math.round((q.y - G.p0.y) / passo) * passo;
-    if (G.tipo === "elemento") { G.el?.setAttribute("transform", `translate(${dx} ${dy})`); setDrag({ riga: G.riga!, dx, dy }); }
+    if (G.tipo === "elemento") {
+      const a = M.el.find(x => x.riga === G.riga);
+      let d: NonNullable<typeof drag> = { riga: G.riga!, dx, dy };
+      if (a?.tipo === "arredo" && !e.altKey) {                         // vicino a un muro si appoggia (Alt: libero)
+        const an = ancora(M, a, { x: a.a.x + dx, y: a.a.y + dy }, Math.min(40, Math.max(12, 16 / vista.k)));
+        d = { ...d, dx: r1(an.c.x - a.a.x), dy: r1(an.c.y - a.a.y), ruota: an.ruota !== a.ruota ? an.ruota : undefined, facce: an.facce };
+      }
+      G.el?.setAttribute("transform", trasforma(d));
+      setDrag(d);
+    }
     if (G.tipo === "vertice" && vert) { const pu = [...vert.punti]; pu[vert.i] = aggancia(q, e.altKey).p; setVert({ ...vert, punti: pu }); }
     if (G.tipo === "foto" && fotoDrag) setFotoDrag({ ...fotoDrag, x: G.fx! + dx, y: G.fy! + dy });
     if (G.tipo === "rettangolo") setPts([pts[0], aggancia(q, e.altKey).p]);
@@ -214,7 +229,7 @@ export default function Pianta(p: Props) {
     if (G.tipo === "giro" && giro) { if (giro.gradi !== arredoSel?.ruota) p.onRuota?.(giro.riga, giro.gradi); setGiro(null); }
     if (G.tipo === "elemento") {
       G.el?.removeAttribute("transform");
-      if (drag && (drag.dx || drag.dy)) p.onSposta?.(drag.riga, drag.dx, drag.dy);
+      if (drag && (drag.dx || drag.dy || drag.ruota !== undefined)) p.onSposta?.(drag.riga, drag.dx, drag.dy, drag.ruota);
       setDrag(null);
     }
     if (G.tipo === "vertice" && vert) { if (G.mosso) p.onVertici?.(vert.riga, vert.punti); setVert(null); }
@@ -277,7 +292,7 @@ export default function Pianta(p: Props) {
     }
     return out;
   }
-  const quote = modifica && arredoSel && strumento === "sposta" && !giro ? distanze(arredoSel, drag?.riga === arredoSel.riga ? drag.dx : 0, drag?.riga === arredoSel.riga ? drag.dy : 0) : [];
+  const quote = modifica && arredoSel && strumento === "sposta" && !giro ? distanze(drag?.riga === arredoSel.riga && drag.ruota !== undefined ? { ...arredoSel, ruota: drag.ruota } : arredoSel, drag?.riga === arredoSel.riga ? drag.dx : 0, drag?.riga === arredoSel.riga ? drag.dy : 0) : [];
   const ruotaPresa = arredoSel && modifica && strumento === "sposta" && !drag ? (() => {
     const gr = ((giro?.gradi ?? arredoSel.ruota) * Math.PI) / 180, d = arredoSel.P / 2 + px(30);
     return { b: { x: arredoSel.a.x + Math.sin(gr) * (arredoSel.P / 2), y: arredoSel.a.y - Math.cos(gr) * (arredoSel.P / 2) }, h: { x: arredoSel.a.x + Math.sin(gr) * d, y: arredoSel.a.y - Math.cos(gr) * d } };
@@ -314,13 +329,14 @@ export default function Pianta(p: Props) {
         })}</g>
         {p.evid?.flatMap(r => contorno(M, r)).map((c, i) => <polygon key={"e" + i} points={poly(c)} className="contorno claude" />)}
         {sel.map((c, i) => <polygon key={"s" + i} points={poly(c)} className="contorno"
-          transform={drag ? `translate(${drag.dx} ${drag.dy})` : giro && arredoSel ? `rotate(${giro.gradi - arredoSel.ruota} ${arredoSel.a.x} ${arredoSel.a.y})` : undefined} />)}
+          transform={drag ? trasforma(drag) : giro && arredoSel ? `rotate(${giro.gradi - arredoSel.ruota} ${arredoSel.a.x} ${arredoSel.a.y})` : undefined} />)}
         {vert && <polyline points={poly(selEl?.tipo === "muro" ? vert.punti : [...vert.punti, vert.punti[0]])} className="bozza" />}
         {maniglie.map((q, i) => <rect key={i} data-v={i} x={q.x - px(7)} y={q.y - px(7)} width={px(14)} height={px(14)} rx={px(3)} className="maniglia" />)}
         {muroSel && muroSel.fino !== muroSel.altezza && <>
           {etichettaPx(muroSel.punti[0].x, muroSel.punti[0].y - px(20), `A ${muroSel.altezza}`)}
           {etichettaPx(muroSel.punti[muroSel.punti.length - 1].x, muroSel.punti[muroSel.punti.length - 1].y - px(20), `B ${muroSel.fino}`)}
         </>}
+        {drag?.facce?.map(([a, b], i) => <line key={"f" + i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="faccia-ancora" />)}
         {quote.map((d, i) => {
           const mx = (d.a.x + d.b.x) / 2, my = (d.a.y + d.b.y) / 2;
           return <g key={"q" + i} pointerEvents="none"><line x1={d.a.x} y1={d.a.y} x2={d.b.x} y2={d.b.y} className="quota-viva" />{etichettaPx(mx, my, String(d.v))}</g>;
