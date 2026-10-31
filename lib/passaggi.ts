@@ -4,7 +4,7 @@
 // Poi una cosa per volta: a ogni stanza ci si arriva? Davanti a ogni mobile resta lo spazio per usarlo?
 // Ogni porta si apre senza urtare? Alle scale si arriva in fondo e si esce in cima?
 import { CATALOGO } from "./arredi.ts";
-import { dentro, etichetta, locale, sagoma, segmenti, vani, type Apertura, type Arredo, type Modello, type Pt } from "./lingua.ts";
+import { bucoScala, dentro, etichetta, locale, sagoma, segmenti, vani, type Apertura, type Arredo, type Modello, type Pt } from "./lingua.ts";
 
 export type Problema = { msg: string; riga: number; p: Pt };
 /** I triangoli dei modelli importati (cm locali, per materiale): se ci sono, contano solo le parti sotto i 150 cm. */
@@ -101,8 +101,7 @@ function griglia(M: Modello, piano: string, mesh: Triangoli) {
     }
   });
   for (const f of el) if (f.tipo === "foro") riempi(f.punti, i => { libero[i] = 0; forza[i] = 0; });
-  for (const s of M.el) if (s.tipo === "arredo" && s.cosa === "scala" && s.piano !== piano &&
-    Math.abs((M.piani.find(p => p.id === s.piano)?.quota ?? 0) + s.H - P.quota) < 40) riempi(sagoma(s), i => { libero[i] = 0; forza[i] = 0; });   // il buco della scala che arriva qui
+  for (const s of M.el) { const h = bucoScala(M, s, piano); if (h) riempi(h, i => { libero[i] = 0; forza[i] = 0; }); }   // il buco della scala che arriva qui
 
   // distanza (smussata 3-4, in terzi di cella) da ogni cella libera al primo ostacolo
   const D = new Int32Array(N);

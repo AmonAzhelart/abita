@@ -2,7 +2,7 @@
 // Il pannello Proprietà: campi veri per ogni tipo di elemento. Ogni campo riscrive solo il suo pezzo di riga.
 import { useEffect, useRef, useState } from "react";
 import { CATALOGO, COLORI, hex } from "@/lib/arredi";
-import { area2, cambiaRiga, dentro, imposta, impostaPunti, lati, sagoma, segmenti, segna, type Arredo, type Elemento, type Modello } from "@/lib/lingua";
+import { area2, bucoScala, cambiaRiga, dentro, imposta, impostaPunti, lati, sagoma, segmenti, segna, type Arredo, type Elemento, type Modello } from "@/lib/lingua";
 import { FORME } from "@/lib/scala";
 
 type Props = {
@@ -20,7 +20,7 @@ const SCALA = /^scala\b|stair/i;                                       // "Scala
 function bucoSopra(M: Modello, a: Arredo) {
   const su = pianoSopra(M, a.piano), qui = M.piani.find(p => p.id === a.piano);
   if (!su || !qui) return null;
-  if (a.cosa === "scala" && Math.abs(qui.quota + a.H - su.quota) < 40) return { su, come: "da solo" as const };
+  if (bucoScala(M, a, su.id)) return { su, come: "da solo" as const };
   const q = sagoma(a), c = { x: a.a.x, y: a.a.y };
   if (M.el.some(f => f.tipo === "foro" && f.piano === su.id && ([...q, c].some(v => dentro(v, f.punti)) || f.punti.some(v => dentro(v, q))))) return { su, come: "foro" as const };
   if (!M.el.some(s => s.tipo === "stanza" && s.piano === su.id && dentro(c, s.punti))) return { su, come: "vuoto" as const };

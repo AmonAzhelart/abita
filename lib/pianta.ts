@@ -1,7 +1,7 @@
 // Pianta in SVG (unità: cm). Stessa funzione per l'editor, la pagina del cliente e l'immagine che vede Claude.
 // Ogni elemento cliccabile porta data-r = numero di riga del testo.
 import { CATALOGO, hex } from "./arredi.ts";
-import { dentro, lati, sagoma, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Muro, type Pt } from "./lingua.ts";
+import { bucoScala, dentro, lati, sagoma, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Muro, type Pt } from "./lingua.ts";
 import type { Esito } from "./passaggi.ts";
 import { progettaScala } from "./scala.ts";
 
@@ -174,8 +174,7 @@ export function disegnaPianta(M: Modello, o: OpzPianta) {
     }
     sv.push(`<path d="${d}" style="fill:rgba(47,158,68,0.2)"/>`);
   }
-  for (const s of M.el) if (s.tipo === "arredo" && s.cosa === "scala" && s.piano !== o.piano && P &&
-    Math.abs((M.piani.find(p => p.id === s.piano)?.quota ?? 0) + s.H - P.quota) < 40)    // il vuoto della scala che sale fin qui
+  for (const s of M.el) if (s.tipo === "arredo" && bucoScala(M, s, o.piano))    // il vuoto della scala che sale fin qui
     sv.push(poli(sagoma(s), st(C.fondo, C.tenue, 1, ";stroke-dasharray:6 4")) + (s.scala ? `<g transform="translate(${r1(s.a.x)} ${r1(s.a.y)}) rotate(${s.ruota})">${s.scala.gradini.map(d => poli(d.poli, st("none", C.tenue, 0.6))).join("")}</g>` : ""));
   for (const e of qui) if (e.tipo === "arredo")
     sv.push(g(e.riga, `<g transform="translate(${r1(e.a.x)} ${r1(e.a.y)}) rotate(${e.ruota})">${simbolo(e, C, M)}</g>`, "arredo"));

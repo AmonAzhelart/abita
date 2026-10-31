@@ -293,6 +293,14 @@ export const locale = (a: Arredo, x: number, y: number): Pt => {
 };
 /** Quello che occupa in pianta: la sagoma vera per le scale (a L, a U, chiocciola), il rettangolo per il resto. */
 export const sagoma = (a: Arredo): Pt[] => (a.scala ? a.scala.sagoma.map(p => locale(a, p.x, p.y)) : angoli(a));
+/** Il buco che una scala apre da sola nel pavimento del piano dove arriva: la sua sagoma, a meno che lì ci sia già un foro disegnato sopra di lei. */
+export function bucoScala(M: Modello, s: Elemento, piano: string): Pt[] | null {
+  if (s.tipo !== "arredo" || s.cosa !== "scala" || s.piano === piano) return null;
+  const P = M.piani.find(p => p.id === piano), q = M.piani.find(p => p.id === s.piano);
+  if (!P || !q || Math.abs(q.quota + s.quota + s.H - P.quota) >= 40) return null;
+  const g = sagoma(s);
+  return M.el.some(f => f.tipo === "foro" && f.piano === piano && (f.punti.some(v => dentro(v, g)) || g.some(v => dentro(v, f.punti)))) ? null : g;
+}
 
 /** Le aperture che tagliano un tratto di muro a→b: anche quelle agganciate a un tratto vicino sulla stessa linea
  *  (muri spezzati, per esempio al colmo). s0, s1 sono misurati lungo a→b. */

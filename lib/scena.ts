@@ -1,7 +1,7 @@
 // Dal modello alla scena three.js: un gruppo per piano più uno per i tetti. Metri, y in alto, z = y della pianta.
 import * as THREE from "three";
 import { pezzi, rgb } from "./arredi.ts";
-import { dentro, locale, sagoma, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Pt } from "./lingua.ts";
+import { bucoScala, dentro, locale, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Pt } from "./lingua.ts";
 
 type Buf = Map<string, number[]>;
 const add = (b: Buf, m: string, ...v: number[][]) => { let a = b.get(m); if (!a) b.set(m, (a = [])); for (const p of v) a.push(p[0], p[1], p[2]); };
@@ -162,8 +162,7 @@ export function costruisci(M: Modello, mesh: Record<string, Mesh> = {}): Scena {
       parti.set(t.riga, [...(parti.get(t.riga) ?? []), { mesh: m3, da: t.da, a: t.a }]);
     }
 
-    const scale = M.el.filter((s): s is Arredo => s.tipo === "arredo" && s.cosa === "scala" && s.piano !== P.id &&
-      Math.abs((M.piani.find(p => p.id === s.piano)?.quota ?? 0) + s.H - P.quota) < 40).map(sagoma)
+    const scale = M.el.flatMap(s => { const h = bucoScala(M, s, P.id); return h ? [h] : []; })
       .concat(el.flatMap(f => (f.tipo === "foro" ? [f.punti] : [])));
     for (const e of el) {
       if (e.tipo === "stanza" || e.tipo === "area") {
