@@ -7,7 +7,7 @@ import { aggiungi, angoli, area2, dentro, distSeg, imposta, impostaPunti, lati, 
 import { hex } from "@/lib/arredi";
 import { passaggi } from "@/lib/passaggi";
 import { NOMI_USO, riepilogo } from "@/lib/verifiche";
-import { altezzaLibera, profiloAltezza, type Altezza, type Campione } from "@/lib/altezza";
+import { altezzaLibera, daQuota, piuBasso, profiloAltezza, type Altezza, type Campione } from "@/lib/altezza";
 import { sezione } from "@/lib/sezione";
 import type { Appunto, Foto, Progetto } from "@/lib/progetti";
 import Catalogo from "./Catalogo";
@@ -127,7 +127,8 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
   const [strumento, setStrumento] = useState<Strumento>("sposta");
   const [cosa, setCosa] = useState("divano");
   const [modoAppunto, setModoAppunto] = useState<"punto" | "linea" | "zona">("punto");
-  const [modoAlto, setModoAlto] = useState<"punto" | "linea">("punto");   // altezza in un punto o lungo una linea
+  const [modoAlto, setModoAlto] = useState<"punto" | "linea" | "quota">("punto");   // in un punto, lungo una linea, o lungo una linea da una quota fissa
+  const [quotaA, setQuotaA] = useState(0);                                  // la quota fissa, in cm dal pavimento del piano (di serie: dove poggi i piedi in A)
   const [profilo, setProfilo] = useState<{ piano: string; a: Pt; b: Pt; L: number; punti: Campione[] } | null>(null);
   const [sAlto, setSAlto] = useState<number | null>(null);                 // dove passi sul grafico, in cm da A
   const [sel, setSel] = useState<number | null>(null);
@@ -307,7 +308,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
       case "arredo": aggiungiQui(`${cosa} a ${fmt(a.x)},${fmt(a.y)}`); return;
       case "misura": aggiungiQui(`misura ${fmt(a.x)},${fmt(a.y)} ${fmt(b.x)},${fmt(b.y)}`); return;
       case "altezza":
-        if (b) { if (Math.hypot(b.x - a.x, b.y - a.y) > 10) { setProfilo({ piano: pq, a, b, ...profiloAltezza(M, pq, a, b, mesh) }); setSAlto(null); } }
+        if (b) { if (Math.hypot(b.x - a.x, b.y - a.y) > 10) { const pr = profiloAltezza(M, pq, a, b, mesh); setProfilo({ piano: pq, a, b, ...pr }); setQuotaA(pr.punti[0].base); setSAlto(null); } }
         else setAlto({ p: a, piano: pq, r: altezzaLibera(M, pq, a, mesh) });
         return;
       case "sezione": if (Math.hypot(b.x - a.x, b.y - a.y) > 20) setTaglio([a, b]); return;
@@ -427,24 +428,27 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
     const giro = (pts: Pt[], z: number) => pts.map(q => [q.x, q.y, z] as [number, number, number]);
     const centro = (pts: Pt[]) => ({ x: pts.reduce((t, q) => t + q.x, 0) / pts.length, y: pts.reduce((t, q) => t + q.y, 0) / pts.length });
     const mq = (pts: Pt[]) => `${(Math.abs(area2(pts)) / 1e4).toFixed(2).replace(".", ",")} m²`;
-    if (strumento === "altezza" && modoAlto === "linea" && profilo && !p3) {    // il profilo: un velo dal pavimento al soffitto lungo la linea
+    if (strumento === "altezza" && modoAlto !== "punto" && profilo && !p3) {    // il profilo: un velo dal pavimento (o dalla quota fissa) al soffitto lungo la linea
       const z0 = Q(profilo.piano), { a, b, L, punti } = profilo, at = (s: number) => ({ x: a.x + ((b.x - a.x) * s) / L, y: a.y + ((b.y - a.y) * s) / L });
+      const rif = modoAlto === "quota" ? quotaA : null, giuDi = (c: Campione) => (rif === null ? c.base : Math.max(rif, c.base));
+      if (rif !== null) d.linee.push({ pts: [[a.x, a.y, z0 + rif], [b.x, b.y, z0 + rif]] });   // la quota fissa, dritta da A a B
       let giu: [number, number, number][] = [], su: [number, number, number][] = [];
       const chiudi = () => { if (giu.length > 1) d.linee.push({ pts: giu }, { pts: su }); giu = []; su = []; };
       punti.forEach((c, i) => {
         if (c.libera === null || c.cima === null) { chiudi(); return; }
         const q = at(c.s);
-        giu.push([q.x, q.y, z0 + c.base]); su.push([q.x, q.y, z0 + c.cima]);
+        giu.push([q.x, q.y, z0 + giuDi(c)]); su.push([q.x, q.y, z0 + c.cima]);
         const n = punti[i + 1];
-        if (n && n.libera !== null && n.cima !== null) { const r = at(n.s); d.veli.push([[q.x, q.y, z0 + c.base], [r.x, r.y, z0 + n.base], [r.x, r.y, z0 + n.cima], [q.x, q.y, z0 + c.cima]]); }
+        if (n && n.libera !== null && n.cima !== null) { const r = at(n.s); d.veli.push([[q.x, q.y, z0 + giuDi(c)], [r.x, r.y, z0 + giuDi(n)], [r.x, r.y, z0 + n.cima], [q.x, q.y, z0 + c.cima]]); }
       });
       chiudi();
-      const min = punti.filter(c => c.piedi && c.libera !== null).sort((x, y) => x.libera! - y.libera!)[0];
+      const min = piuBasso(punti, rif);
       const qui = sAlto === null ? min : punti.reduce((m, c) => (Math.abs(c.s - sAlto) < Math.abs(m.s - sAlto) ? c : m), punti[0]);
-      if (qui && qui.libera !== null && qui.cima !== null) {
-        const q = at(qui.s);
-        d.linee.push({ pts: [[q.x - 12, q.y, z0 + qui.cima], [q.x + 12, q.y, z0 + qui.cima]] }, { pts: [[q.x, q.y, z0 + qui.base], [q.x, q.y, z0 + qui.cima]] });
-        d.scritte.push({ p: [q.x, q.y, z0 + (qui.base + qui.cima) / 2], testo: `${metri(qui.libera)} m`, tono: qui.piedi && qui.libera < 200 ? "basso" : qui.piedi && qui.libera < 210 ? "giusto" : undefined });
+      const v = qui && daQuota(qui, rif).v;
+      if (qui && v != null && qui.cima !== null) {
+        const q = at(qui.s), z1 = rif ?? qui.base, conta = rif !== null || qui.piedi;
+        d.linee.push({ pts: [[q.x - 12, q.y, z0 + qui.cima], [q.x + 12, q.y, z0 + qui.cima]] }, { pts: [[q.x, q.y, z0 + z1], [q.x, q.y, z0 + qui.cima]] });
+        d.scritte.push({ p: [q.x, q.y, z0 + (z1 + qui.cima) / 2], testo: `${metri(v)} m`, tono: conta && v < 200 ? "basso" : conta && v < 210 ? "giusto" : undefined });
       }
       d.scritte.push({ p: [a.x, a.y, z0 + 10], testo: "A" }, { p: [b.x, b.y, z0 + 10], testo: "B" });
     }
@@ -490,7 +494,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
     }
     return d;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vista, strumento, alto, misArea, taglio, sez, p3, cur3, M, modoAppunto, modoAlto, profilo, sAlto]);
+  }, [vista, strumento, alto, misArea, taglio, sez, p3, cur3, M, modoAppunto, modoAlto, profilo, sAlto, quotaA]);
   const visibili = appunti.filter(a => filtro === "tutti" || a.stato === "da fare").slice().reverse();
   const ultimoClaude = p.attivita.find(a => a.chi === "claude")?.quando;
   const claudeAttivo = !!ultimoClaude && Date.now() - ultimoClaude < 90_000;
@@ -567,10 +571,12 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
             <div className="segmenti vetro" role="group" aria-label="Altezza in un punto o lungo una linea">
               <button aria-pressed={modoAlto === "punto"} onClick={() => setModoAlto("punto")} title="Clic su un punto: quanto spazio c'è sopra la testa">Punto</button>
               <button aria-pressed={modoAlto === "linea"} onClick={() => setModoAlto("linea")} title="Clic su due punti: il grafico dell'altezza lungo la linea">Linea</button>
+              <button aria-pressed={modoAlto === "quota"} onClick={() => setModoAlto("quota")} title="Il primo clic fissa la quota, il secondo tira la linea: quanto spazio c'è sopra quella quota">Da quota</button>
             </div>
           </div>}
           {strumento === "altezza" && modoAlto === "punto" && alto && (alto.piano === piano || vista === "3d") && <Alto r={alto.r} onChiudi={() => setAlto(null)} />}
-          {strumento === "altezza" && modoAlto === "linea" && profilo && <ProfiloAltezza L={profilo.L} punti={profilo.punti} s={sAlto} onS={setSAlto} onChiudi={() => setProfilo(null)} />}
+          {strumento === "altezza" && modoAlto !== "punto" && profilo && <ProfiloAltezza L={profilo.L} punti={profilo.punti} s={sAlto} onS={setSAlto} onChiudi={() => setProfilo(null)}
+            quota={modoAlto === "quota" ? quotaA : null} onQuota={setQuotaA} />}
           {areaQui && <Misurata pts={areaQui} onChiudi={() => setMisArea(null)} onStanza={() => {
             nuovaRiga(`stanza "Stanza ${M.el.filter(e => e.tipo === "stanza").length + 1}" ${scriviPunti(areaQui)} pavimento gres`, misArea?.piano);
             setMisArea(null); mostra("Stanza aggiunta: dalle il suo nome nel testo");
@@ -691,8 +697,8 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
           <Pianta modello={M} piano={piano} quote={quote} passaggi={es} modifica strumento={strumento} modoAppunto={modoAppunto} sel={sel} evid={evid}
             appunti={filtro === "tutti" ? appunti : appunti.filter(a => a.stato === "da fare" || a.id === notaSel)} notaSel={notaSel}
             segno={strumento === "altezza" && modoAlto === "punto" && alto?.piano === piano ? { p: alto.p, testo: alto.r.buco ? "buco" : alto.r.libera === null ? "aperto" : `${metri(alto.r.libera)} m`, basso: (alto.r.libera ?? 999) < 200 && !alto.r.sotto.startsWith("sopra ") } : null} foto={p.foto} fotoAttiva={fotoAttiva} centra={centra} adatta={adatta}
-            area={areaQui} taglio={taglio} altezzaLinea={strumento === "altezza" && modoAlto === "linea"}
-            profilo={strumento === "altezza" && modoAlto === "linea" && profilo && (profilo.piano === piano) ? { a: profilo.a, b: profilo.b, s: sAlto ?? profilo.punti.filter(c => c.piedi && c.libera !== null).sort((x, y) => x.libera! - y.libera!)[0]?.s ?? null, L: profilo.L } : null}
+            area={areaQui} taglio={taglio} altezzaLinea={strumento === "altezza" && modoAlto !== "punto"}
+            profilo={strumento === "altezza" && modoAlto !== "punto" && profilo && profilo.piano === piano ? { a: profilo.a, b: profilo.b, s: sAlto ?? piuBasso(profilo.punti, modoAlto === "quota" ? quotaA : null)?.s ?? null, L: profilo.L } : null}
             onSel={scegli} onSposta={posa}
             onVertici={(r, pts) => cambia(impostaPunti(R.current.testo, r, pts))} onDisegna={disegnato}
             muro={{ spessore: opzMuro.spessore, a: hA, b: hB }} onBozza={setInCorso}

@@ -6,7 +6,7 @@ import { passaggi, testoPassaggi } from "./passaggi.ts";
 import { muroInCorso } from "./scena.ts";
 import { ancora } from "./ancora.ts";
 import { riepilogo, uso } from "./verifiche.ts";
-import { altezzaLibera, profiloAltezza } from "./altezza.ts";
+import { altezzaLibera, daQuota, piuBasso, profiloAltezza } from "./altezza.ts";
 import { sezione } from "./sezione.ts";
 import { descriviScala } from "./scala.ts";
 
@@ -153,4 +153,6 @@ assert.ok(sz.pezzi.filter(p => p.cosa === "scala").length >= 5 && sz.pezzi.some(
 const pf = profiloAltezza(M, "terra", { x: 300, y: 300 }, { x: 300, y: 450 });
 assert.equal(pf.punti.length, 31);
 assert.ok(pf.punti.every(c => c.libera === 280 && c.piedi));
+// da una quota fissa 30 cm sopra il pavimento: 2,50 m di spazio, pavimento 30 cm sotto
+assert.deepEqual(daQuota(piuBasso(pf.punti, 30)!, 30), { v: 250, f: -30 });
 console.log("lingua ok");

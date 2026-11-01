@@ -105,3 +105,9 @@ export function profiloAltezza(M: Modello, piano: string, a: Pt, b: Pt, mesh: Tr
   }
   return { L, punti };
 }
+/** Un campione letto da una quota fissa q (cm dal pavimento del piano) invece che dal pavimento sotto di lui:
+ *  v = spazio sopra la quota fino al soffitto, f = dov'è il pavimento rispetto alla quota. Con q null è l'altezza libera solita. */
+export const daQuota = (c: Campione, q: number | null) => ({ v: c.cima === null ? null : q === null ? c.libera : c.cima - q, f: q === null ? 0 : c.base - q });
+/** Il campione con meno spazio sopra (dalla quota fissa, o dal pavimento dove ci si sta in piedi). */
+export const piuBasso = (punti: Campione[], q: number | null) =>
+  punti.filter(c => daQuota(c, q).v !== null && (q !== null || c.piedi)).sort((a, b) => daQuota(a, q).v! - daQuota(b, q).v!)[0] as Campione | undefined;

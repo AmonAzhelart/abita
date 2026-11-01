@@ -478,3 +478,5 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6
 .profilo-info { margin: 0; font-size: 13px; line-height: 1.4; }
 .profilo-linea line { stroke: var(--accent); stroke-width: 3px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .profilo-linea circle { fill: var(--accent); stroke: var(--panel); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.pf-griglia.zero { stroke: var(--fg); stroke-opacity: 0.55; }
+.pf-pavimento { fill: none; stroke: var(--fg); stroke-width: 1.5px; stroke-opacity: 0.7; }
