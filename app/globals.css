@@ -480,3 +480,7 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6
 .profilo-linea circle { fill: var(--accent); stroke: var(--panel); stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .pf-griglia.zero { stroke: var(--fg); stroke-opacity: 0.55; }
 .pf-pavimento { fill: none; stroke: var(--fg); stroke-width: 1.5px; stroke-opacity: 0.7; }
+/* stampa: linee con spessori da carta (non si assottigliano a 1:200), bianco e nero, icone del verso del foglio */
+.tavola-pianta :not(text) { vector-effect: non-scaling-stroke; }
+.tavola-pianta.bn { filter: grayscale(1); }
+.ico-foglio { width: 15px; height: 15px; display: block; fill: none; stroke: currentColor; stroke-width: 1.6; }

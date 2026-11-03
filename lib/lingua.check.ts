@@ -155,4 +155,10 @@ assert.equal(pf.punti.length, 31);
 assert.ok(pf.punti.every(c => c.libera === 280 && c.piedi));
 // da una quota fissa 30 cm sopra il pavimento: 2,50 m di spazio, pavimento 30 cm sotto
 assert.deepEqual(daQuota(piuBasso(pf.punti, 30)!, 30), { v: 250, f: -30 });
+// stampa: il foglio prende la casa (muri esterni da 30 cm), non un muro di cinta lontano che sfiora una stanza
+const { contenuto } = await import("./pianta.ts");
+assert.deepEqual(contenuto(M, "terra", false), { x: -15, y: -15, w: 1030, h: 830 });
+const Mc = leggi(ESEMPIO.replace("piano Terra altezza 280", `piano Terra altezza 280
+  muro 0,-3000 0,3000 spessore 30`));
+assert.ok(contenuto(Mc, "terra", false)!.h < 840, "il muro di cinta lungo 60 m non allarga il foglio");
 console.log("lingua ok");

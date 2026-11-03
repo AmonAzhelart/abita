@@ -1,15 +1,21 @@
 // Pianta in SVG (unità: cm). Stessa funzione per l'editor, la pagina del cliente e l'immagine che vede Claude.
 // Ogni elemento cliccabile porta data-r = numero di riga del testo.
 import { CATALOGO, hex } from "./arredi.ts";
-import { bucoScala, dentro, lati, sagoma, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Muro, type Pt } from "./lingua.ts";
+import { bucoScala, dentro, distSeg, lati, sagoma, segmenti, vani as vaniDi, type Apertura, type Arredo, type Modello, type Muro, type Pt, type Stanza } from "./lingua.ts";
 import type { Esito } from "./passaggi.ts";
 import { progettaScala } from "./scala.ts";
 
 export type Colori = { muro: string; sotto: string; linea: string; testo: string; tenue: string; quota: string; fondo: string; bordo: string };
 export const CHIARO: Colori = { muro: "#23262B", sotto: "rgba(35,38,43,0.13)", linea: "#23262B", testo: "#23262B", tenue: "#5B6169", quota: "#2557A7", fondo: "#F8F8F5", bordo: "rgba(35,38,43,0.6)" };
 export const CSS: Colori = { muro: "var(--p-muro)", sotto: "var(--p-sotto)", linea: "var(--p-linea)", testo: "var(--fg)", tenue: "var(--muted)", quota: "var(--accent)", fondo: "var(--p-fondo)", bordo: "var(--p-bordo)" };
-export type Etichetta = { x: number; y: number; testo: string; dim: number; ruota: number; colore: string; peso: number; dy?: number };   // dy: spostamento in em
-export type OpzPianta = { piano: string; colori?: Colori; quote?: boolean; nomi?: boolean; sotto?: boolean; passaggi?: Esito | null; testo?: boolean };
+export type Etichetta = { x: number; y: number; testo: string; dim: number; ruota: number; colore: string; peso: number; dy?: number; tipo?: "nome" | "area" | "ingombro" | "misura" | "quota" };   // dy: spostamento in em
+export type OpzPianta = {
+  piano: string; colori?: Colori; quote?: boolean; nomi?: boolean; sotto?: boolean; passaggi?: Esito | null; testo?: boolean;
+  /** In stampa: cm di disegno per ogni mm di carta. Le scritte prendono misure da foglio, i nomi si adattano alla stanza e nessuna scritta copre un'altra. */
+  mm?: number;
+  /** false: senza mobili (le scale restano). pavimenti: quanto si vede il colore dei pavimenti, da 0 a 1. */
+  arredi?: boolean; pavimenti?: number;
+};
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const P2 = (p: Pt) => `${r1(p.x)},${r1(p.y)}`;
@@ -21,6 +27,30 @@ const ellisse = (x: number, y: number, rx: number, ry: number, s: string) => `<e
 const poli = (p: Pt[], s: string, extra = "") => `<polygon points="${p.map(P2).join(" ")}" style="${s}"${extra}/>`;
 const SALE = "#33373e";                                  // la linea di salita: scura, sui gradini chiari, in tutti e due i temi
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+/** I muri della casa su quel piano: quelli alti che toccano una stanza (i muri del giardino restano fuori). */
+export function muriCasa(M: Modello, piano: string): Muro[] {
+  const muri = M.el.filter((e): e is Muro => e.tipo === "muro" && e.piano === piano && e.altezza >= 150);
+  const stanze = M.el.filter((e): e is Stanza => e.tipo === "stanza" && e.piano === piano);
+  if (!stanze.length) return muri;
+  return muri.filter(m => segmenti(m).some(([a, b]) => stanze.some(st => dentro(a, st.punti) || dentro(b, st.punti)
+    || st.punti.some(q => distSeg(q, a, b) <= m.spessore / 2 + 10) || lati(st.punti).some(([c, d]) => distSeg(a, c, d) <= m.spessore / 2 + 10 || distSeg(b, c, d) <= m.spessore / 2 + 10))));
+}
+/** I punti della casa su quel piano: le stanze e i loro muri, tagliati vicino alle stanze (un muro di cinta che ne sfiora una non porta dentro il giardino). */
+export function puntiCasa(M: Modello, piano: string): Pt[] {
+  const st = M.el.flatMap(e => (e.tipo === "stanza" && e.piano === piano ? e.punti : []));
+  const muri = muriCasa(M, piano).map(m => ({ m, pts: pezziMuro(M, m, false).flatMap(z => z.pts) }));
+  if (!st.length) return muri.flatMap(x => x.pts);
+  const xs = st.map(q => q.x), ys = st.map(q => q.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  return [...st, ...muri.flatMap(({ m, pts }) => { const t = m.spessore + 1; return pts.map(q => ({ x: Math.min(x1 + t, Math.max(x0 - t, q.x)), y: Math.min(y1 + t, Math.max(y0 - t, q.y)) })); })];
+}
+/** Quello che va sul foglio, senza margini: la casa o tutto il piano con gli esterni. */
+export function contenuto(M: Modello, piano: string, esterni: boolean) {
+  const pts = esterni ? M.el.filter(e => e.piano === piano).flatMap(e => (e.tipo === "arredo" ? sagoma(e) : e.tipo === "apertura" ? [] : e.punti)) : puntiCasa(M, piano);
+  if (!pts.length) return null;
+  const xs = pts.map(q => q.x), ys = pts.map(q => q.y);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+}
 
 export function riquadro(M: Modello, piano?: string) {
   const st = piano ? M.el.flatMap(e => (e.tipo === "stanza" && e.piano === piano ? e.punti : [])) : [];   // le stanze del piano, se ci sono
@@ -121,30 +151,78 @@ function apertura(o: Apertura, C: Colori) {
   return out.join("");
 }
 
+/** Quanto spazio prende una scritta in larghezza (stima per un carattere senza grazie). */
+const largo = (t: string, dim: number, peso = 400) => t.length * dim * (peso >= 600 ? 0.6 : 0.55);
+/** Quanto è larga (dir "x") o alta ("y") la stanza passando dal punto c. */
+function luce(poly: Pt[], c: Pt, dir: "x" | "y") {
+  const xs: number[] = [];
+  for (const [a, b] of lati(poly)) {
+    const [pa, pb, qa, qb] = dir === "x" ? [a.y, b.y, a.x, b.x] : [a.x, b.x, a.y, b.y], cv = dir === "x" ? c.y : c.x;
+    if ((pa > cv) !== (pb > cv)) xs.push(qa + ((qb - qa) * (cv - pa)) / (pb - pa));
+  }
+  xs.sort((m, n) => m - n);
+  const cp = dir === "x" ? c.x : c.y;
+  for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i] <= cp && cp <= xs[i + 1]) return xs[i + 1] - xs[i];
+  return 0;
+}
+/** Il nome (su una o due righe, rimpicciolito fin dove si legge ancora) e l'area, dentro la stanza: misure in mm di carta per K. */
+function nomeStampa(nome: string, area: string | null, poly: Pt[], c: Pt, K: number, C: Colori, out: Etichetta[]) {
+  const W = luce(poly, c, "x") * 0.9, H = luce(poly, c, "y") * 0.9, MAX = 3.6 * K, MIN = 2.2 * K;
+  const unita = (r: string[]) => Math.max(...r.map(t => largo(t, 1, 600)));
+  let righe = [nome], d = Math.max(MIN, Math.min(MAX, W / unita(righe)));
+  if (nome.includes(" ") && d < MAX) {                              // su due righe (a capo nello spazio più vicino al centro) si legge meglio?
+    const sp = [...nome].flatMap((ch, i) => (ch === " " ? [i] : [])), k = sp.sort((a, b) => Math.abs(a - nome.length / 2) - Math.abs(b - nome.length / 2))[0];
+    const due = [nome.slice(0, k), nome.slice(k + 1)], d2 = Math.max(MIN, Math.min(MAX, W / unita(due), H / 2.6));
+    if (d2 > d * 1.2 || unita(righe) * d > W) { righe = due; d = d2; }
+  }
+  const da = Math.min(2.6 * K, d * 0.8), riga = d * 1.12, alto = righe.length * riga + (area ? da * 1.3 : 0), conArea = !!area && alto <= H;
+  const y0 = c.y - (righe.length * riga + (conArea ? da * 1.3 : 0)) / 2;
+  righe.forEach((t, i) => out.push({ x: c.x, y: y0 + riga * (i + 0.5), testo: t, dim: d, ruota: 0, colore: C.testo, peso: 600, tipo: "nome" }));
+  if (conArea) out.push({ x: c.x, y: y0 + righe.length * riga + da * 0.7, testo: area!, dim: da, ruota: 0, colore: C.tenue, peso: 400, tipo: "area" });
+}
+/** In stampa: le scritte che si coprono si tolgono, prima le meno importanti (le quote delle stanze, poi le misure, l'ingombro, l'area). */
+function senzaSovrapposizioni(et: Etichetta[]) {
+  const ORDINE = ["nome", "area", "ingombro", "misura", "quota"], tenute: number[][] = [];
+  return et.map((t, i) => ({ t, i })).sort((a, b) => ORDINE.indexOf(a.t.tipo ?? "quota") - ORDINE.indexOf(b.t.tipo ?? "quota") || a.i - b.i).filter(({ t }) => {
+    const w = largo(t.testo, t.dim, t.peso), h = t.dim * 1.1, an = (t.ruota * Math.PI) / 180, cs = Math.abs(Math.cos(an)), sn = Math.abs(Math.sin(an));
+    const W = (w * cs + h * sn) / 2, H = (w * sn + h * cs) / 2, y = t.y + (t.dy ?? 0) * t.dim, b = [t.x - W, y - H, t.x + W, y + H];
+    if (tenute.some(q => b[0] < q[2] && q[0] < b[2] && b[1] < q[3] && q[1] < b[3])) return false;
+    tenute.push(b);
+    return true;
+  }).sort((a, b) => a.i - b.i).map(({ t }) => t);
+}
+
 function etichetteStanze(M: Modello, o: OpzPianta, C: Colori, out: Etichetta[]) {
+  const K = o.mm;
   for (const e of M.el) {
     if (e.piano !== o.piano) continue;
     if ((e.tipo === "stanza" || (e.tipo === "area" && e.nome)) && o.nomi !== false) {
       const c = e.tipo === "stanza" ? e.centro : { x: e.punti.reduce((s, p) => s + p.x, 0) / e.punti.length, y: e.punti.reduce((s, p) => s + p.y, 0) / e.punti.length };
-      out.push({ x: c.x, y: c.y, dy: -0.45, testo: e.nome, dim: 20, ruota: 0, colore: C.testo, peso: 600 });
-      if (e.tipo === "stanza") out.push({ x: c.x, y: c.y, dy: 0.95, testo: `${e.area.toFixed(1).replace(".", ",")} m²`, dim: 14, ruota: 0, colore: C.tenue, peso: 400 });
+      const area = e.tipo === "stanza" ? `${e.area.toFixed(1).replace(".", ",")} m²` : null;
+      if (K) nomeStampa(e.nome, area, e.punti, c, K, C, out);
+      else {
+        out.push({ x: c.x, y: c.y, dy: -0.45, testo: e.nome, dim: 20, ruota: 0, colore: C.testo, peso: 600, tipo: "nome" });
+        if (area) out.push({ x: c.x, y: c.y, dy: 0.95, testo: area, dim: 14, ruota: 0, colore: C.tenue, peso: 400, tipo: "area" });
+      }
     }
     if (e.tipo === "stanza" && o.quote) for (const [a, b] of lati(e.punti)) {
-      const L = Math.hypot(b.x - a.x, b.y - a.y);
-      if (L < 50) continue;
+      const L = Math.hypot(b.x - a.x, b.y - a.y), q = K ? 2.2 * K : 12, testo = String(Math.round(L));
+      if (L < (K ? largo(testo, q, 600) + 2 * K : 50)) continue;
       let n = { x: -(b.y - a.y) / L, y: (b.x - a.x) / L };
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       if (!dentro({ x: mid.x + n.x * 5, y: mid.y + n.y * 5 }, e.punti)) n = { x: -n.x, y: -n.y };
       let ang = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
       if (ang > 90) ang -= 180; else if (ang <= -90) ang += 180;
-      out.push({ x: mid.x + n.x * 13, y: mid.y + n.y * 13, testo: String(Math.round(L)), dim: 12, ruota: ang, colore: C.quota, peso: 600 });
+      const off = K ? q * 0.7 + 0.8 * K : 13;
+      out.push({ x: mid.x + n.x * off, y: mid.y + n.y * off, testo, dim: q, ruota: ang, colore: C.quota, peso: 600, tipo: "quota" });
     }
     if (e.tipo === "misura") {
       const [a, b] = e.punti, L = Math.hypot(b.x - a.x, b.y - a.y);
       let ang = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
       if (ang > 90) ang -= 180; else if (ang <= -90) ang += 180;
       const n = { x: -(b.y - a.y) / (L || 1), y: (b.x - a.x) / (L || 1) };
-      out.push({ x: (a.x + b.x) / 2 - n.x * 12, y: (a.y + b.y) / 2 - n.y * 12, testo: String(Math.round(L)), dim: 14, ruota: ang, colore: C.quota, peso: 600 });
+      const q = K ? 2.2 * K : 14, off = K ? q * 0.7 + 0.6 * K : 12;
+      out.push({ x: (a.x + b.x) / 2 - n.x * off, y: (a.y + b.y) / 2 - n.y * off, testo: String(Math.round(L)), dim: q, ruota: ang, colore: C.quota, peso: 600, tipo: "misura" });
     }
   }
 }
@@ -159,8 +237,9 @@ export function disegnaPianta(M: Modello, o: OpzPianta) {
     if (giu) for (const m of M.el) if (m.tipo === "muro" && m.piano === giu.id)
       for (const pz of pezziMuro(M, m, false)) sv.push(poli(pz.pts, st(C.sotto)));
   }
-  for (const e of qui) if (e.tipo === "area") sv.push(g(e.riga, poli(e.punti, st(hex(e.colore, 0.45))), "area"));
-  for (const e of qui) if (e.tipo === "stanza") sv.push(g(e.riga, poli(e.punti, st(hex(e.colore, 0.62), C.bordo, 0.6)), "stanza"));
+  const pav = o.pavimenti ?? 0.62;
+  for (const e of qui) if (e.tipo === "area") sv.push(g(e.riga, poli(e.punti, st(pav ? hex(e.colore, pav * 0.72) : "none", pav ? "none" : C.bordo, pav ? 0 : 0.5, pav ? "" : ";stroke-dasharray:4 3")), "area"));
+  for (const e of qui) if (e.tipo === "stanza") sv.push(g(e.riga, poli(e.punti, st(pav ? hex(e.colore, pav) : "none", C.bordo, 0.6)), "stanza"));
   for (const e of qui) if (e.tipo === "foro") sv.push(g(e.riga, poli(e.punti, st(C.fondo, C.tenue, 1, ";stroke-dasharray:6 4")), "foro"));
   if (o.passaggi) {
     const { x0, y0, cella, W, H, raggiunto } = o.passaggi;
@@ -176,7 +255,7 @@ export function disegnaPianta(M: Modello, o: OpzPianta) {
   }
   for (const s of M.el) if (s.tipo === "arredo" && bucoScala(M, s, o.piano))    // il vuoto della scala che sale fin qui
     sv.push(poli(sagoma(s), st(C.fondo, C.tenue, 1, ";stroke-dasharray:6 4")) + (s.scala ? `<g transform="translate(${r1(s.a.x)} ${r1(s.a.y)}) rotate(${s.ruota})">${s.scala.gradini.map(d => poli(d.poli, st("none", C.tenue, 0.6))).join("")}</g>` : ""));
-  for (const e of qui) if (e.tipo === "arredo")
+  for (const e of qui) if (e.tipo === "arredo" && (o.arredi !== false || e.cosa === "scala") && !(o.mm && e.copertura))   // in stampa le coperture importate coprirebbero la pianta
     sv.push(g(e.riga, `<g transform="translate(${r1(e.a.x)} ${r1(e.a.y)}) rotate(${e.ruota})">${simbolo(e, C, M)}</g>`, "arredo"));
   for (const e of qui) if (e.tipo === "muro")
     sv.push(g(e.riga, pezziMuro(M, e).map(pz => poli(pz.pts, st(e.altezza < 150 ? hex(e.colore, 0.1) : C.muro, e.altezza < 150 ? C.muro : "none", e.altezza < 150 ? 1 : 0))).join(""), "muro"));
@@ -192,15 +271,15 @@ export function disegnaPianta(M: Modello, o: OpzPianta) {
       ? linea({ x: a.x - s, y: (a.y + b.y) / 2 }, { x: b.x + s, y: (a.y + b.y) / 2 }, D) : linea({ x: (a.x + b.x) / 2, y: a.y - s }, { x: (a.x + b.x) / 2, y: b.y + s }, D)) : ""), "tetto"));
   }
   etichetteStanze(M, o, C, et);
-  const muri = qui.flatMap(e => (e.tipo === "muro" && e.altezza >= 150 ? pezziMuro(M, e, false).flatMap(z => z.pts) : []));
+  const muri = puntiCasa(M, o.piano), K = o.mm;
   if (o.quote && muri.length) {                          // l'ingombro della casa: larghezza e profondità sul filo esterno dei muri
     const xs = muri.map(q => q.x), ys = muri.map(q => q.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-    const S = st("none", C.quota, 1), d = 55, t = 7;
+    const S = st("none", C.quota, 1), d = K ? 8 * K : 55, t = K ? 1 * K : 7, e0 = K ? 1.5 * K : 12, e1 = K ? 1.2 * K : 8, q = K ? 2.8 * K : 15, off = K ? q * 0.7 + 0.6 * K : 14;
     const catena = (a: Pt, b: Pt, n: Pt, rot: number) => {
       const A = { x: a.x + n.x * d, y: a.y + n.y * d }, B = { x: b.x + n.x * d, y: b.y + n.y * d };
-      sv.push(`<g class="ingombro">${linea(A, B, S)}${linea({ x: a.x + n.x * 12, y: a.y + n.y * 12 }, { x: A.x + n.x * 8, y: A.y + n.y * 8 }, S)}${linea({ x: b.x + n.x * 12, y: b.y + n.y * 12 }, { x: B.x + n.x * 8, y: B.y + n.y * 8 }, S)}`
+      sv.push(`<g class="ingombro">${linea(A, B, S)}${linea({ x: a.x + n.x * e0, y: a.y + n.y * e0 }, { x: A.x + n.x * e1, y: A.y + n.y * e1 }, S)}${linea({ x: b.x + n.x * e0, y: b.y + n.y * e0 }, { x: B.x + n.x * e1, y: B.y + n.y * e1 }, S)}`
         + [A, B].map(q => linea({ x: q.x - t * 0.7, y: q.y + t * 0.7 }, { x: q.x + t * 0.7, y: q.y - t * 0.7 }, st("none", C.quota, 1.4))).join("") + `</g>`);   // le tacche a 45°
-      et.push({ x: (A.x + B.x) / 2 + n.x * 14, y: (A.y + B.y) / 2 + n.y * 14, testo: String(Math.round(Math.hypot(b.x - a.x, b.y - a.y))), dim: 15, ruota: rot, colore: C.quota, peso: 700 });
+      et.push({ x: (A.x + B.x) / 2 + n.x * off, y: (A.y + B.y) / 2 + n.y * off, testo: String(Math.round(Math.hypot(b.x - a.x, b.y - a.y))), dim: q, ruota: rot, colore: C.quota, peso: 700, tipo: "ingombro" });
     };
     catena({ x: x0, y: y0 }, { x: x1, y: y0 }, { x: 0, y: -1 }, 0);
     catena({ x: x0, y: y0 }, { x: x0, y: y1 }, { x: -1, y: 0 }, -90);
@@ -209,9 +288,10 @@ export function disegnaPianta(M: Modello, o: OpzPianta) {
     const R = st("none", "#D9480F", 3);
     sv.push(cerchio(p.p.x, p.p.y, 18, st("rgba(217,72,15,0.15)", "#D9480F", 2.5)) + linea({ x: p.p.x - 9, y: p.p.y - 9 }, { x: p.p.x + 9, y: p.p.y + 9 }, R) + linea({ x: p.p.x + 9, y: p.p.y - 9 }, { x: p.p.x - 9, y: p.p.y + 9 }, R));
   }
-  if (o.testo !== false) for (const t of et)
+  const scritte = K ? senzaSovrapposizioni(et) : et;
+  if (o.testo !== false) for (const t of scritte)
     sv.push(`<text x="${r1(t.x)}" y="${r1(t.y + (t.dy ?? 0) * t.dim)}" font-size="${t.dim}" text-anchor="middle" dominant-baseline="central" style="fill:${t.colore};font-weight:${t.peso};paint-order:stroke;stroke:${C.fondo};stroke-width:${t.dim / 5}px;stroke-linejoin:round"${t.ruota ? ` transform="rotate(${r1(t.ruota)} ${r1(t.x)} ${r1(t.y)})"` : ""}>${esc(t.testo)}</text>`);
-  return { svg: sv.join(""), etichette: et };
+  return { svg: sv.join(""), etichette: scritte };
 }
 
 /** Il simbolo di un arredo del catalogo con le misure di serie, per le anteprime: markup e viewBox. */
