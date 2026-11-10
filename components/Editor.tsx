@@ -230,7 +230,7 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
         const ricarica = () => { if (R.current.sporco || R.current.inVolo) setTimeout(ricarica, 300); else location.reload(); };
         setAvviso({ t: "È uscita una versione nuova di Abita", azione: ["Ricarica", ricarica] });
       }
-    }, 1500);
+    }, 3000);
     return () => clearInterval(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);

@@ -19,7 +19,7 @@ export type Voce = { id: string; nome: string; cliente: string; aggiornato: numb
 type Versione = { rev: number; testo: string; chi: Chi; quando: number };
 
 export const LIMITI = { testo: 200_000, appunto: 2000, appunti: 400, foto: 20, datiFoto: 3_500_000 };
-const K = { m: (id: string, k: string) => `abita:m:${id}:${k}`, indice: "abita:indice", p: (id: string) => `abita:p:${id}`, s: (s: string) => `abita:s:${s}`, f: (id: string) => `abita:f:${id}`, storia: (id: string) => `abita:storia:${id}` };
+const K = { m: (id: string, k: string) => `abita:m:${id}:${k}`, indice: "abita:indice", p: (id: string) => `abita:p:${id}`, r: (id: string) => `abita:r:${id}`, s: (s: string) => `abita:s:${s}`, f: (id: string) => `abita:f:${id}`, storia: (id: string) => `abita:storia:${id}` };
 const nuovoId = (n: number) => randomBytes(n).toString("base64url");
 
 export class Errore extends Error {
@@ -33,6 +33,11 @@ export async function elenco() {
 
 export async function carica(id: string) {
   return /^[\w-]{4,40}$/.test(id) ? kv.get<Progetto>(K.p(id)) : null;
+}
+
+/** Solo il numero di revisione: l'editor lo controlla ogni pochi secondi senza scaricare tutto il progetto. */
+export async function revisione(id: string) {
+  return /^[\w-]{4,40}$/.test(id) ? kv.get<number>(K.r(id)) : null;
 }
 
 async function voce(p: Progetto | null, id: string) {
@@ -55,6 +60,7 @@ async function modifica(id: string, fn: (p: Progetto) => void | Promise<void>) {
   p.rev++;
   p.aggiornato = Date.now();
   await kv.set(K.p(id), p);
+  await kv.set(K.r(id), p.rev);
   await voce(p, id);
   return p;
 }
@@ -65,6 +71,7 @@ export async function crea(nome: string, cliente = "", testo?: string) {
   const t = testo ?? ESEMPIO.replace('progetto "Casa al mare"', `progetto "${nome.replace(/"/g, "'")}"`).replace('cliente "Famiglia Esposito"', `cliente "${(cliente || "—").replace(/"/g, "'")}"`);
   const p: Progetto = { id, nome, cliente: cliente.trim().slice(0, 120), testo: t.slice(0, LIMITI.testo), rev: 1, aggiornato: Date.now(), share, pubblicato: null, appunti: [], foto: [], attivita: [] };
   await kv.set(K.p(id), p);
+  await kv.set(K.r(id), p.rev);
   await kv.set(K.s(share), id);
   await voce(p, id);
   return p;
@@ -219,6 +226,7 @@ export async function elimina(id: string) {
   for (const f of p.foto) await kv.del(K.f(f.id));
   await kv.del(K.s(p.share));
   await kv.del(K.storia(id));
+  await kv.del(K.r(id));
   await kv.del(K.p(id));
   await voce(null, id);
 }

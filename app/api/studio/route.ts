@@ -3,11 +3,14 @@ import * as P from "@/lib/progetti";
 
 // API dell'editor (protetta dal proxy). GET = controllo modifiche, POST = un'azione.
 export async function GET(req: Request) {
-  const u = new URL(req.url), p = await P.carica(u.searchParams.get("id") ?? "");
+  const u = new URL(req.url), id = u.searchParams.get("id") ?? "", rev = u.searchParams.get("rev");
+  const h = { "x-versione": process.env.VERSIONE ?? "" };
+  // il controllo dell'editor: se la revisione è la stessa basta il numero, il progetto intero pesa centinaia di KB
+  if (rev !== null && String(await P.revisione(id)) === rev) return new Response(null, { status: 204, headers: h });
+  const p = await P.carica(id);
   if (!p) return NextResponse.json({ errore: "Progetto non trovato" }, { status: 404 });
   if (u.searchParams.has("modelli")) return NextResponse.json(await P.meshModelli(p));
-  const h = { "x-versione": process.env.VERSIONE ?? "" };
-  if (String(p.rev) === u.searchParams.get("rev")) return new Response(null, { status: 204, headers: h });
+  if (String(p.rev) === rev) return new Response(null, { status: 204, headers: h });
   return NextResponse.json(p, { headers: h });
 }
 
