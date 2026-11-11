@@ -60,6 +60,8 @@ async function pronto() {
 }
 /** Se i progetti di prima non si sono ancora potuti copiare, perché: lo mostra l'elenco dei progetti. */
 export const copiaSospesa = () => (daCopiare && intoppo ? intoppo.msg : null);
+/** "Copia adesso": riprova subito, senza aspettare i 5 minuti. */
+export async function riprovaCopia() { intoppo = null; await pronto(); }
 
 const json = <T>(v: unknown, vuoto: T): T => (typeof v === "string" && v ? (JSON.parse(v) as T) : vuoto);
 const progetto = (r: Riga): Progetto => ({

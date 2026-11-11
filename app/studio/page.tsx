@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import Elimina from "@/components/Elimina";
 import Importa from "@/components/Importa";
-import { copiaSospesa, crea, elenco, elimina } from "@/lib/progetti";
+import { copiaSospesa, crea, elenco, elimina, riprovaCopia } from "@/lib/progetti";
 
 export const metadata = { title: "Progetti · Abita" };
 export const dynamic = "force-dynamic";
@@ -13,6 +13,12 @@ async function nuovo(f: FormData) {
   const nome = String(f.get("nome") ?? ""), cliente = String(f.get("cliente") ?? "");
   const p = await crea(nome, cliente, f.get("esempio") ? undefined : `progetto "${nome.replace(/"/g, "'")}"\ncliente "${cliente.replace(/"/g, "'")}"\n\npiano Terra altezza 270\n`);
   redirect(`/studio/${p.id}`);
+}
+
+async function copia() {
+  "use server";
+  await riprovaCopia();
+  revalidatePath("/studio");
 }
 
 async function via(f: FormData) {
@@ -37,6 +43,7 @@ export default async function Studio() {
         <b>I progetti di prima sono ancora sul vecchio database (Upstash) e per ora non si possono leggere.</b>
         <span>Abita riprova da solo ogni 5 minuti e li copia qui appena può, senza toccare quello che fai nel frattempo. Per averli subito: nella console di Upstash attiva l&apos;aumento automatico del piano o passa al pagamento a consumo (per la copia bastano pochi centesimi), poi ricarica questa pagina.</span>
         <span className="tenue piccolo">Risposta di Upstash: {sospesa}</span>
+        <form action={copia}><button className="btn piccolo">Copia adesso</button></form>
       </div>}
       <div className="griglia-progetti">
         <section className="progetto nuovo">
