@@ -27,8 +27,13 @@ async function api(percorso: string, init?: RequestInit) {
 async function diagnosi() {
   const prova = async (u: string) => ((await fetch(u, { cache: "no-store", headers: { authorization: `Bearer ${token}` } }).then(x => x.json()).catch(() => null)) as { success?: boolean; result?: { status?: string } } | null);
   const v = (await prova("https://api.cloudflare.com/client/v4/user/tokens/verify"))?.success ? "personale" : (await prova(`https://api.cloudflare.com/client/v4/accounts/${account}/tokens/verify`))?.success ? "dell'account" : null;
-  return v ? `Il token è valido (token ${v}) ma non può usare D1 su questo account: controlla che CLOUDFLARE_ACCOUNT_ID sia quello dell'account con "${nome}" e che il token abbia il permesso Account > D1 > Edit per quell'account (senza filtro sugli IP).`
-    : "Cloudflare non riconosce il token: forse è scaduto, revocato o copiato male (spazi, virgolette, un pezzo mancante). Creane uno nuovo con il permesso Account > D1 > Edit.";
+  // solo la forma dei valori, mai i caratteri: basta a riconoscere una Global API Key o un ID messi al posto del token
+  const forma = (s = "") => (/^[0-9a-f]{37}$/.test(s) ? "37 cifre esadecimali: sembra la Global API Key, non un API Token"
+    : /^[0-9a-f]{32}$/.test(s) ? "32 cifre esadecimali: sembra un ID (account, zona o database), non un token"
+      : /["'\s]/.test(s) ? `${s.length} caratteri, con virgolette o spazi dentro` : `${s.length} caratteri`);
+  const conti = `CLOUDFLARE_API_TOKEN: ${forma(token)}; CLOUDFLARE_ACCOUNT_ID: ${/^[0-9a-f]{32}$/.test(account ?? "") ? "32 cifre esadecimali, giusto" : `${forma(account)}, ma dovrebbe essere di 32 cifre esadecimali`}.`;
+  return (v ? `Il token è valido (token ${v}) ma non può usare D1 su questo account: controlla che CLOUDFLARE_ACCOUNT_ID sia quello dell'account con "${nome}" e che il token abbia il permesso Account > D1 > Edit per quell'account (senza filtro sugli IP).`
+    : "Cloudflare non riconosce il token: forse è scaduto, revocato o copiato male, o è un token dell'account con un CLOUDFLARE_ACCOUNT_ID sbagliato.") + " " + conti;
 }
 let id: Promise<string> | null = null;
 const idDatabase = () => (id ??= process.env.CLOUDFLARE_D1_DATABASE_ID
