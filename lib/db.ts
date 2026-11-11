@@ -15,8 +15,11 @@ async function api(percorso: string, init?: RequestInit) {
   const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/d1/database${percorso}`, {
     ...init, cache: "no-store", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
   });
-  const j = (await r.json().catch(() => null)) as { success?: boolean; errors?: { message: string }[]; result?: unknown } | null;
-  if (!j?.success) throw new Error(`Database (D1): ${j?.errors?.map(e => e.message).join("; ") || `risposta ${r.status}`}`);
+  const j = (await r.json().catch(() => null)) as { success?: boolean; errors?: { code?: number; message: string }[]; result?: unknown } | null;
+  if (!j?.success) {                                       // dove e cosa, senza credenziali: per capire se è il token, l'account o il database
+    const dove = percorso.startsWith("?") ? "ricerca del database" : "query";
+    throw new Error(`Database (D1, ${dove}, HTTP ${r.status}): ${j?.errors?.map(e => `${e.message}${e.code ? ` [${e.code}]` : ""}`).join("; ") || "risposta vuota"}`);
+  }
   return j.result;
 }
 let id: Promise<string> | null = null;
