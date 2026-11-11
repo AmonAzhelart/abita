@@ -90,7 +90,7 @@ function server(origin: string) {
     inputSchema: { id: z.string(), testo: z.string(), messaggio: z.string().describe("Cosa hai fatto, in breve: lo vede il progettista") },
   }, prova(async ({ id, testo: t, messaggio }: { id: string; testo: string; messaggio: string }) => {
     const { p, prima } = await P.salvaTesto((await progetto(id)).id, t, "claude", messaggio);
-    return esito(p, prima, origin);
+    return esito(p!, prima, origin);
   }));
 
   s.registerTool("modifica_progetto", {
@@ -109,7 +109,7 @@ function server(origin: string) {
       t = t.replace(m.cerca, () => m.sostituisci);
     }
     const { p, prima } = await P.salvaTesto(p0.id, t, "claude", messaggio);
-    return esito(p, prima, origin);
+    return esito(p!, prima, origin);
   }));
 
   s.registerTool("guarda", {

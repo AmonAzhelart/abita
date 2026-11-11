@@ -15,14 +15,16 @@ npm install
 npm run dev
 ```
 
-Serve un file `.env.local` con `ABITA_PASSWORD` e `ABITA_TOKEN` (vedi `.env.example`). Senza Upstash i dati finiscono in `.dati/`.
-`npm run verifica` controlla la lingua e i passaggi.
+Serve un file `.env.local` con `ABITA_PASSWORD` e `ABITA_TOKEN` (vedi `.env.example`). In locale i dati stanno in un file SQLite, `.dati/abita.sqlite`
+(stesso SQL di Cloudflare D1). `npm run verifica` controlla la lingua, i passaggi e il database.
 
 ## Su Vercel
 
 1. Metti la cartella su GitHub e importala da vercel.com (oppure `npx vercel` da qui).
 2. In Settings → Environment Variables aggiungi `ABITA_PASSWORD` (per entrare) e `ABITA_TOKEN` (una chiave lunga e casuale, per Claude).
-3. In Storage aggiungi **Upstash for Redis** e collegalo al progetto: imposta da solo `KV_REST_API_URL` e `KV_REST_API_TOKEN`.
+3. Il database è **Cloudflare D1** (`abita-database`). Da Cloudflare → My Profile → API Tokens crea un token con il permesso
+   *Account → D1 → Edit*, poi su Vercel aggiungi `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN`. Le tabelle si creano da sole.
+   Se ci sono ancora `KV_REST_API_URL` e `KV_REST_API_TOKEN` (il vecchio Upstash), al primo avvio Abita ci copia i progetti, una volta sola.
 4. Ripubblica (Deployments → Redeploy).
 5. Collega Claude Code con il comando che trovi in `/studio/guida`.
 

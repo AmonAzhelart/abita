@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     switch (b.azione) {
       case "crea": return NextResponse.json(await P.crea(String(b.nome ?? ""), String(b.cliente ?? ""), String(b.testo ?? "")));
       case "modello": return NextResponse.json(await P.salvaModello(id, b.nome, b.info, b.mesh));
-      case "salva": return NextResponse.json((await P.salvaTesto(id, String(b.testo ?? ""), "io", "", b.baseRev)).p);
+      case "salva": return NextResponse.json((await P.salvaTesto(id, String(b.testo ?? ""), "io", "", b.baseRev)).salvato);   // solo rev, nome e data: il progetto intero pesa centinaia di KB
       case "pubblica": return NextResponse.json(await P.pubblica(id, "io", b.nota));
       case "appunto": await P.nuovoAppunto(id, b, "io"); break;
       case "cambiaAppunto": return NextResponse.json(await P.cambiaAppunto(id, String(b.aid), b, "io"));

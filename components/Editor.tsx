@@ -174,7 +174,13 @@ export default function Editor({ iniziale }: { iniziale: Progetto }) {
     setStato("salvo");
     const res = await rpc("salva", { id, testo: r.testo, baseRev: r.rev });
     r.inVolo = false;
-    if (res.ok) { r.rev = res.doc.rev; setP(res.doc); setStato(r.sporco ? "salvo" : "salvato"); return; }
+    if (res.ok) {                                    // torna solo rev, nome e data: il resto del progetto non è cambiato
+      const { rev, nome, aggiornato } = res.doc;
+      r.rev = rev;
+      setP(x => ({ ...x, rev, nome, aggiornato }));
+      setStato(r.sporco ? "salvo" : "salvato");
+      return;
+    }
     if (res.stato === 409) {
       const doc = await fetch(`/api/studio?id=${id}`).then(x => x.json());
       applica(doc, true);

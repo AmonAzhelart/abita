@@ -1,6 +1,6 @@
 "use client";
 // La pagina del cliente: la casa in 3D o in pianta, le stanze, e un commento toccando la pianta.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { leggi, type ModelloInfo, type Pt } from "@/lib/lingua";
 import type { Appunto } from "@/lib/progetti";
 import Pianta from "./Pianta";
@@ -24,10 +24,16 @@ export default function Visore({ share, iniziale }: { share: string; iniziale: D
 
   useEffect(() => { try { setNome(localStorage.getItem("abita-nome") ?? ""); } catch {} }, []);
   const mostra = (t: string) => { setAvviso(t); setTimeout(() => setAvviso(a => (a === t ? "" : a)), 4000); };
+  const stato = useRef<string | null>(null);                  // versione e commenti visti: se non cambiano non si riscarica niente
   const ricarica = async (annuncia: boolean) => {
+    if (annuncia && stato.current) {
+      const c = await fetch(`/api/v/${share}?stato=${encodeURIComponent(stato.current)}`).catch(() => null);
+      if (c?.status !== 200) return;
+    }
     const r = await fetch(`/api/v/${share}`).catch(() => null);
     if (!r?.ok) return;
-    const n: Dati = await r.json();
+    const n: Dati & { stato?: string } = await r.json();
+    stato.current = n.stato ?? null;
     setD(old => { if (annuncia && n.versione !== old.versione) mostra(`È arrivata la versione ${n.versione}`); return n; });
   };
   useEffect(() => { const t = setInterval(() => !document.hidden && ricarica(true), 20000); return () => clearInterval(t); });

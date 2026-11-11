@@ -1,9 +1,13 @@
-// I progetti: un documento per progetto (testo, appunti, foto, attività), un indice, le foto a parte.
+// I progetti, nel database (lib/db.ts): una riga per progetto con il testo e le parti piccole (appunti, foto, attività,
+// modelli) come JSON; la storia del testo a righe (al massimo 40 per progetto, i salvataggi ravvicinati della stessa
+// persona si fondono in una); i dati pesanti (immagini delle foto, triangoli dei modelli) a parte, a pezzi.
 // Ogni modifica alza rev: l'editor e la pagina del cliente lo controllano per aggiornarsi da soli.
+// Salvare il testo dall'editor è una richiesta sola: aggiorna la riga se la revisione è quella attesa, e la storia.
 import { randomBytes } from "node:crypto";
+import { batch, sql, type Istruzione, type Riga } from "./db.ts";
 import { ESEMPIO } from "./esempio.ts";
 import { leggi, righeCambiate, type ModelloInfo, type Pt } from "./lingua.ts";
-import { kv } from "./store.ts";
+import { vecchioArchivio } from "./vecchio.ts";
 
 export type Chi = "io" | "claude" | "cliente";
 export type Appunto = { id: string; piano: string; tipo: "punto" | "linea" | "zona"; a: Pt; b?: Pt; testo: string; stato: "da fare" | "fatta"; da: Chi; risposta?: string; quando: number };
@@ -16,91 +20,161 @@ export type Progetto = {
   modelli?: Record<string, ModelloInfo & { chiave: string }>;
 };
 export type Voce = { id: string; nome: string; cliente: string; aggiornato: number; daFare: number; versione: number | null; share: string };
-type Versione = { rev: number; testo: string; chi: Chi; quando: number };
+/** Quello che cambia salvando il testo: all'editor basta questo, non il progetto intero. */
+export type Salvato = { rev: number; nome: string; aggiornato: number };
 
 export const LIMITI = { testo: 200_000, appunto: 2000, appunti: 400, foto: 20, datiFoto: 3_500_000 };
-const K = { m: (id: string, k: string) => `abita:m:${id}:${k}`, indice: "abita:indice", p: (id: string) => `abita:p:${id}`, r: (id: string) => `abita:r:${id}`, s: (s: string) => `abita:s:${s}`, f: (id: string) => `abita:f:${id}`, storia: (id: string) => `abita:storia:${id}` };
+const STORIA = 40, FONDI = 120_000, PEZZO = 900_000;     // versioni tenute, ms entro cui si fondono, caratteri per riga di dati
+const D = { m: (id: string, k: string) => `m:${id}:${k}`, f: (fid: string) => `f:${fid}` };
 const nuovoId = (n: number) => randomBytes(n).toString("base64url");
+const ID = /^[\w-]{4,40}$/;
 
 export class Errore extends Error {
   stato: number;
   constructor(msg: string, stato = 400) { super(msg); this.stato = stato; }
 }
 
-export async function elenco() {
-  return ((await kv.get<Voce[]>(K.indice)) ?? []).sort((a, b) => b.aggiornato - a.aggiornato);
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS progetti (id TEXT PRIMARY KEY, nome TEXT NOT NULL, cliente TEXT NOT NULL DEFAULT '', testo TEXT NOT NULL,
+    rev INTEGER NOT NULL, aggiornato INTEGER NOT NULL, share TEXT NOT NULL UNIQUE, chi TEXT NOT NULL DEFAULT 'io', gruppo INTEGER NOT NULL DEFAULT 0,
+    pubblicato TEXT, appunti TEXT NOT NULL DEFAULT '[]', foto TEXT NOT NULL DEFAULT '[]', attivita TEXT NOT NULL DEFAULT '[]', modelli TEXT NOT NULL DEFAULT '{}')`,
+  `CREATE TABLE IF NOT EXISTS versioni (progetto TEXT NOT NULL, gruppo INTEGER NOT NULL, rev INTEGER NOT NULL, testo TEXT NOT NULL, chi TEXT NOT NULL, quando INTEGER NOT NULL, PRIMARY KEY (progetto, gruppo))`,
+  `CREATE TABLE IF NOT EXISTS dati (chiave TEXT NOT NULL, parte INTEGER NOT NULL, valore TEXT NOT NULL, PRIMARY KEY (chiave, parte))`,
+  `CREATE TABLE IF NOT EXISTS meta (chiave TEXT PRIMARY KEY, valore TEXT NOT NULL)`,
+];
+let preparato: Promise<void> | null = null;
+const COPIATO = `copiato:${process.env.VERCEL_ENV ?? "locale"}`;   // l'anteprima e la produzione copiano ognuna per conto suo
+/** Una volta per avvio: le tabelle, e la copia dei progetti dal vecchio archivio se in questo ambiente non è ancora stata fatta. */
+const pronto = () => (preparato ??= (async () => {
+  const r = await batch([...SCHEMA.map(s => ({ sql: s })), { sql: "SELECT valore FROM meta WHERE chiave = ?", params: [COPIATO] }]);
+  if (!r[r.length - 1].length) await copiaDalVecchio();
+})().catch(e => { preparato = null; throw e; }));
+
+const json = <T>(v: unknown, vuoto: T): T => (typeof v === "string" && v ? (JSON.parse(v) as T) : vuoto);
+const progetto = (r: Riga): Progetto => ({
+  id: String(r.id), nome: String(r.nome), cliente: String(r.cliente), testo: String(r.testo), rev: Number(r.rev), aggiornato: Number(r.aggiornato), share: String(r.share),
+  pubblicato: json(r.pubblicato, null), appunti: json(r.appunti, []), foto: json(r.foto, []), attivita: json(r.attivita, []), modelli: json(r.modelli, {}),
+});
+/** Le colonne che cambiano con le azioni diverse dal testo (appunti, foto, pubblicazione, modelli...). */
+const COLONNE = ["nome", "cliente", "share", "pubblicato", "appunti", "foto", "attivita", "modelli"] as const;
+const valori = (p: Progetto) => [p.nome, p.cliente, p.share, p.pubblicato ? JSON.stringify(p.pubblicato) : null, JSON.stringify(p.appunti), JSON.stringify(p.foto), JSON.stringify(p.attivita), JSON.stringify(p.modelli ?? {})];
+
+/** Un valore lungo (foto, triangoli) in righe da PEZZO caratteri: D1 non vuole righe oltre i 2 MB. */
+function scriviDati(chiave: string, valore: string, sovrascrivi = true): Istruzione[] {
+  const parti = Array.from({ length: Math.max(1, Math.ceil(valore.length / PEZZO)) }, (_, i) => valore.slice(i * PEZZO, (i + 1) * PEZZO));
+  return [
+    ...(sovrascrivi ? [{ sql: "DELETE FROM dati WHERE chiave = ?", params: [chiave] }] : []),
+    ...parti.map((v, i) => ({ sql: `INSERT ${sovrascrivi ? "" : "OR IGNORE "}INTO dati (chiave, parte, valore) VALUES (?, ?, ?)`, params: [chiave, i, v] })),
+  ];
+}
+/** I dati con le chiavi da `da` (compresa) ad `a` (esclusa), rimessi insieme. */
+async function leggiDati(da: string, a: string) {
+  const out = new Map<string, string>();
+  for (const r of await sql("SELECT chiave, valore FROM dati WHERE chiave >= ? AND chiave < ? ORDER BY chiave, parte", [da, a]))
+    out.set(String(r.chiave), (out.get(String(r.chiave)) ?? "") + String(r.valore));
+  return out;
+}
+
+export async function elenco(): Promise<Voce[]> {
+  await pronto();
+  const r = await sql(`SELECT id, nome, cliente, aggiornato, share, json_extract(pubblicato, '$.versione') AS versione,
+    (SELECT count(*) FROM json_each(progetti.appunti) WHERE json_extract(value, '$.stato') = 'da fare') AS daFare FROM progetti ORDER BY aggiornato DESC`);
+  return r.map(x => ({ id: String(x.id), nome: String(x.nome), cliente: String(x.cliente), aggiornato: Number(x.aggiornato), share: String(x.share), versione: x.versione == null ? null : Number(x.versione), daFare: Number(x.daFare) }));
 }
 
 export async function carica(id: string) {
-  return /^[\w-]{4,40}$/.test(id) ? kv.get<Progetto>(K.p(id)) : null;
+  if (!ID.test(id)) return null;
+  await pronto();
+  const [r] = await sql("SELECT * FROM progetti WHERE id = ?", [id]);
+  return r ? progetto(r) : null;
 }
 
 /** Solo il numero di revisione: l'editor lo controlla ogni pochi secondi senza scaricare tutto il progetto. */
 export async function revisione(id: string) {
-  return /^[\w-]{4,40}$/.test(id) ? kv.get<number>(K.r(id)) : null;
-}
-
-async function voce(p: Progetto | null, id: string) {
-  // ponytail: indice letto e riscritto per intero; basta per un utente e qualche centinaio di progetti
-  const ind = ((await kv.get<Voce[]>(K.indice)) ?? []).filter(v => v.id !== id);
-  if (p) ind.push({ id: p.id, nome: p.nome, cliente: p.cliente, aggiornato: p.aggiornato, daFare: p.appunti.filter(a => a.stato === "da fare").length, versione: p.pubblicato?.versione ?? null, share: p.share });
-  await kv.set(K.indice, ind);
+  if (!ID.test(id)) return null;
+  await pronto();
+  const [r] = await sql("SELECT rev FROM progetti WHERE id = ?", [id]);
+  return r ? Number(r.rev) : null;
 }
 
 function registra(p: Progetto, a: Omit<Attivita, "quando">) {
   p.attivita = [{ ...a, quando: Date.now() }, ...p.attivita].slice(0, 40);
 }
 
-/** Leggi, cambia, salva. fn può lanciare Errore per annullare. */
+/** Leggi, cambia, salva (tutto tranne il testo). Se intanto qualcun altro ha salvato, si rilegge e si riprova. fn può lanciare Errore per annullare. */
 async function modifica(id: string, fn: (p: Progetto) => void | Promise<void>) {
-  // ponytail: leggi-modifica-scrivi senza lock; con un solo utente e Claude le collisioni sono rare
-  const p = await carica(id);
-  if (!p) throw new Errore("Progetto non trovato", 404);
-  await fn(p);
-  p.rev++;
-  p.aggiornato = Date.now();
-  await kv.set(K.p(id), p);
-  await kv.set(K.r(id), p.rev);
-  await voce(p, id);
-  return p;
+  for (let prova = 0; ; prova++) {
+    const p = await carica(id);
+    if (!p) throw new Errore("Progetto non trovato", 404);
+    const base = p.rev;
+    await fn(p);
+    p.rev = base + 1;
+    p.aggiornato = Date.now();
+    const r = await sql(`UPDATE progetti SET ${COLONNE.map(c => `${c} = ?`).join(", ")}, rev = ?, aggiornato = ? WHERE id = ? AND rev = ? RETURNING rev`, [...valori(p), p.rev, p.aggiornato, id, base]);
+    if (r.length) return p;
+    if (prova >= 2) throw new Errore("Il progetto sta cambiando proprio adesso: riprova", 409);
+  }
 }
 
 export async function crea(nome: string, cliente = "", testo?: string) {
   nome = nome.trim().slice(0, 120) || "Nuovo progetto";
-  const id = nuovoId(6), share = nuovoId(12);
   const t = testo ?? ESEMPIO.replace('progetto "Casa al mare"', `progetto "${nome.replace(/"/g, "'")}"`).replace('cliente "Famiglia Esposito"', `cliente "${(cliente || "—").replace(/"/g, "'")}"`);
-  const p: Progetto = { id, nome, cliente: cliente.trim().slice(0, 120), testo: t.slice(0, LIMITI.testo), rev: 1, aggiornato: Date.now(), share, pubblicato: null, appunti: [], foto: [], attivita: [] };
-  await kv.set(K.p(id), p);
-  await kv.set(K.r(id), p.rev);
-  await kv.set(K.s(share), id);
-  await voce(p, id);
+  const p: Progetto = { id: nuovoId(6), nome, cliente: cliente.trim().slice(0, 120), testo: t.slice(0, LIMITI.testo), rev: 1, aggiornato: Date.now(), share: nuovoId(12), pubblicato: null, appunti: [], foto: [], attivita: [], modelli: {} };
+  await pronto();
+  await sql(`INSERT INTO progetti (id, testo, rev, aggiornato, ${COLONNE.join(", ")}) VALUES (?, ?, ?, ?, ${COLONNE.map(() => "?").join(", ")})`, [p.id, p.testo, p.rev, p.aggiornato, ...valori(p)]);
   return p;
 }
 
-export async function salvaTesto(id: string, testo: string, chi: Chi, cosa = "", baseRev?: number) {
+/**
+ * Salva il testo. Dall'editor (chi "io") passa baseRev: se nel frattempo il progetto è cambiato, 409 e non si scrive niente.
+ * Torna rev, nome e data; per Claude anche il progetto aggiornato e il testo di prima (per raccontare cosa è cambiato).
+ */
+export async function salvaTesto(id: string, testo: string, chi: Chi, cosa = "", baseRev?: number): Promise<{ salvato: Salvato; p: Progetto | null; prima: string }> {
   if (testo.length > LIMITI.testo) throw new Errore(`Il testo è troppo lungo (massimo ${LIMITI.testo} caratteri)`);
-  let prima = "";
-  const p = await modifica(id, async q => {
-    if (baseRev !== undefined && baseRev !== q.rev) throw new Errore("Il progetto è cambiato nel frattempo", 409);
-    prima = q.testo;
-    q.testo = testo;
-    const t = leggi(testo).titolo;
-    if (t) q.nome = t.slice(0, 120);
-    if (chi !== "io") registra(q, { chi, cosa: cosa || "ha cambiato il progetto", righe: righeCambiate(prima, testo).slice(0, 200) });
-  });
-  const st = (await kv.get<Versione[]>(K.storia(id))) ?? [];
-  if (st[0] && st[0].chi === chi && Date.now() - st[0].quando < 120_000) st[0] = { rev: p.rev, testo, chi, quando: Date.now() };
-  else st.unshift({ rev: p.rev, testo, chi, quando: Date.now() });
-  await kv.set(K.storia(id), st.slice(0, 40));
-  return { p, prima };
+  await pronto();
+  let p: Progetto | null = null, prima = "", base = baseRev;
+  if (chi !== "io") {                                          // Claude e il cliente lasciano traccia nelle attività
+    p = await carica(id);
+    if (!p) throw new Errore("Progetto non trovato", 404);
+    prima = p.testo;
+    registra(p, { chi, cosa: cosa || "ha cambiato il progetto", righe: righeCambiate(prima, testo).slice(0, 200) });
+    base ??= p.rev;
+  }
+  const ora = Date.now(), nome = (leggi(testo).titolo ?? "").slice(0, 120), conBase = base !== undefined;
+  const [r] = await batch([
+    {                                                          // nello stesso gruppo della storia se è la stessa persona entro due minuti
+      sql: `UPDATE progetti SET testo = ?, nome = COALESCE(NULLIF(?, ''), nome), gruppo = CASE WHEN chi = ? AND aggiornato > ? THEN gruppo ELSE rev + 1 END,
+        chi = ?, rev = rev + 1, aggiornato = ?${p ? ", attivita = ?" : ""} WHERE id = ?${conBase ? " AND rev = ?" : ""} RETURNING rev, nome, aggiornato`,
+      params: [testo, nome, chi, ora - FONDI, chi, ora, ...(p ? [JSON.stringify(p.attivita)] : []), id, ...(conBase ? [base!] : [])],
+    },
+    {
+      sql: `INSERT INTO versioni (progetto, gruppo, rev, testo, chi, quando) SELECT id, gruppo, rev, testo, chi, aggiornato FROM progetti WHERE id = ? AND aggiornato = ? AND chi = ?
+        ON CONFLICT (progetto, gruppo) DO UPDATE SET rev = excluded.rev, testo = excluded.testo, chi = excluded.chi, quando = excluded.quando`,
+      params: [id, ora, chi],                                  // solo se l'UPDATE qui sopra è andato: la riga ha l'ora di questo salvataggio
+    },
+    { sql: `DELETE FROM versioni WHERE progetto = ? AND gruppo < (SELECT gruppo FROM versioni WHERE progetto = ? ORDER BY gruppo DESC LIMIT 1 OFFSET ${STORIA - 1})`, params: [id, id] },
+  ]);
+  if (!r.length) {
+    if (conBase && (await revisione(id)) !== null) throw new Errore("Il progetto è cambiato nel frattempo", 409);
+    throw new Errore("Progetto non trovato", 404);
+  }
+  const salvato = { rev: Number(r[0].rev), nome: String(r[0].nome), aggiornato: Number(r[0].aggiornato) };
+  if (p) Object.assign(p, salvato, { testo });
+  return { salvato, p, prima };
 }
 
-export const storia = async (id: string) => ((await kv.get<Versione[]>(K.storia(id))) ?? []).map(({ rev, chi, quando, testo }) => ({ rev, chi, quando, righe: testo.split("\n").length }));
+export async function storia(id: string) {
+  await pronto();
+  return (await sql("SELECT rev, chi, quando, length(testo) - length(replace(testo, char(10), '')) + 1 AS righe FROM versioni WHERE progetto = ? ORDER BY gruppo DESC", [id]))
+    .map(r => ({ rev: Number(r.rev), chi: String(r.chi), quando: Number(r.quando), righe: Number(r.righe) }));
+}
 
 export async function ripristina(id: string, rev: number) {
-  const v = ((await kv.get<Versione[]>(K.storia(id))) ?? []).find(x => x.rev === rev);
+  await pronto();
+  const [v] = await sql("SELECT testo FROM versioni WHERE progetto = ? AND rev = ?", [id, rev]);
   if (!v) throw new Errore("Versione non trovata", 404);
-  return (await salvaTesto(id, v.testo, "io")).p;
+  await salvaTesto(id, String(v.testo), "io");
+  return (await carica(id))!;
 }
 
 export async function rinomina(id: string, campi: { nome?: string; cliente?: string }) {
@@ -118,11 +192,8 @@ export async function pubblica(id: string, chi: Chi, nota?: string) {
 }
 
 export async function nuovoLink(id: string) {
-  const vecchio = (await carica(id))?.share, share = nuovoId(12);
-  const p = await modifica(id, q => { q.share = share; });
-  if (vecchio) await kv.del(K.s(vecchio));
-  await kv.set(K.s(share), id);
-  return p;
+  const share = nuovoId(12);
+  return modifica(id, q => { q.share = share; });
 }
 
 const punto = (v: unknown): Pt => {
@@ -166,11 +237,12 @@ export async function nuovaFoto(id: string, f: { nome: string; dati: string; w: 
   if (f.dati.length > LIMITI.datiFoto) throw new Errore("La foto è troppo pesante");
   const fid = nuovoId(8), w = Math.round(+f.w) || 1000, h = Math.round(+f.h) || 1000;
   const foto: Foto = { id: fid, nome: String(f.nome || "foto").slice(0, 120), piano: String(f.piano).slice(0, 60), x: 0, y: 0, scala: 1, w, h, rot: 0, opacita: 0.5, visibile: true, quando: Date.now() };
+  await pronto();
+  await batch(scriviDati(D.f(fid), f.dati));                  // prima l'immagine: se il progetto poi rifiuta la foto resta solo un dato orfano
   await modifica(id, p => {
     if (p.foto.length >= LIMITI.foto) throw new Errore(`Al massimo ${LIMITI.foto} foto per progetto`);
     p.foto.push(foto);
   });
-  await kv.set(K.f(fid), { dati: f.dati });
   return foto;
 }
 
@@ -189,52 +261,66 @@ export async function cambiaFoto(id: string, fid: string, c: Partial<Pick<Foto, 
 
 export async function togliFoto(id: string, fid: string) {
   const p = await modifica(id, q => { q.foto = q.foto.filter(f => f.id !== fid); });
-  await kv.del(K.f(fid));
+  await sql("DELETE FROM dati WHERE chiave = ?", [D.f(fid)]);
   return p;
 }
 
-export const datiFoto = async (fid: string) => (/^[\w-]{6,20}$/.test(fid) ? (await kv.get<{ dati: string }>(K.f(fid)))?.dati ?? null : null);
+export async function datiFoto(fid: string) {
+  if (!/^[\w-]{6,20}$/.test(fid)) return null;
+  await pronto();
+  return (await leggiDati(D.f(fid), D.f(fid) + "\u0000")).get(D.f(fid)) ?? null;
+}
 
 /** Un oggetto 3D importato: le misure stanno nel progetto, i triangoli (base64 float32 per materiale) a parte. */
 export async function salvaModello(id: string, nome: string, info: ModelloInfo, mesh: Record<string, string>) {
   nome = String(nome).trim().slice(0, 120);
   if (!nome) throw new Errore("Il modello deve avere un nome");
-  if (JSON.stringify(mesh).length > LIMITI.datiFoto) throw new Errore(`Il modello "${nome}" è troppo pesante`);
+  const testo = JSON.stringify(mesh);
+  if (testo.length > LIMITI.datiFoto) throw new Errore(`Il modello "${nome}" è troppo pesante`);
   const chiave = nuovoId(8);
   let vecchia: string | undefined;
+  await pronto();
+  await batch(scriviDati(D.m(id, chiave), testo));
   const p = await modifica(id, q => {
     q.modelli ??= {};
     if (!q.modelli[nome] && Object.keys(q.modelli).length >= 400) throw new Errore("Troppi modelli in questo progetto");
     vecchia = q.modelli[nome]?.chiave;
     q.modelli[nome] = { L: +info.L, P: +info.P, H: +info.H, pianta: info.pianta, chiave };
   });
-  await kv.set(K.m(id, chiave), mesh);
-  if (vecchia) await kv.del(K.m(id, vecchia));
+  if (vecchia) await sql("DELETE FROM dati WHERE chiave = ?", [D.m(id, vecchia)]);
   return p;
 }
 
 export async function meshModelli(p: Progetto) {
-  const voci = Object.entries(p.modelli ?? {});
-  const dati = await Promise.all(voci.map(([, m]) => kv.get<Record<string, string>>(K.m(p.id, m.chiave))));
-  return Object.fromEntries(voci.map(([n], i) => [n, dati[i] ?? {}]));
+  const tutti = await leggiDati(D.m(p.id, ""), D.m(p.id, "\u007f"));
+  return Object.fromEntries(Object.entries(p.modelli ?? {}).map(([n, m]) => [n, json<Record<string, string>>(tutti.get(D.m(p.id, m.chiave)), {})]));
 }
 
 export async function elimina(id: string) {
   const p = await carica(id);
   if (!p) return;
-  for (const m of Object.values(p.modelli ?? {})) await kv.del(K.m(id, m.chiave));
-  for (const f of p.foto) await kv.del(K.f(f.id));
-  await kv.del(K.s(p.share));
-  await kv.del(K.storia(id));
-  await kv.del(K.r(id));
-  await kv.del(K.p(id));
-  await voce(null, id);
+  await batch([
+    { sql: "DELETE FROM dati WHERE chiave >= ? AND chiave < ?", params: [D.m(id, ""), D.m(id, "\u007f")] },
+    ...p.foto.map(f => ({ sql: "DELETE FROM dati WHERE chiave = ?", params: [D.f(f.id)] })),
+    { sql: "DELETE FROM versioni WHERE progetto = ?", params: [id] },
+    { sql: "DELETE FROM progetti WHERE id = ?", params: [id] },
+  ]);
 }
 
 export async function daLink(share: string) {
   if (!/^[\w-]{8,40}$/.test(share)) return null;
-  const id = await kv.get<string>(K.s(share));
-  return id ? carica(id) : null;
+  await pronto();
+  const [r] = await sql("SELECT * FROM progetti WHERE share = ?", [share]);
+  return r ? progetto(r) : null;
+}
+
+/** Per la pagina del cliente: basta sapere se c'è una versione nuova o se i commenti sono cambiati, senza scaricare il progetto. */
+export async function statoLink(share: string) {
+  if (!/^[\w-]{8,40}$/.test(share)) return null;
+  await pronto();
+  const [r] = await sql(`SELECT json_extract(pubblicato, '$.versione') AS v, (SELECT count(*) || '-' || sum(json_extract(value, '$.stato') = 'fatta') FROM json_each(progetti.appunti)
+    WHERE json_extract(value, '$.da') = 'cliente') AS c FROM progetti WHERE share = ?`, [share]);
+  return r ? `${r.v ?? 0}.${r.c ?? "0-0"}` : null;
 }
 
 export async function commentoCliente(share: string, a: { piano: string; a: Pt; testo: string; nome?: string }) {
@@ -243,4 +329,40 @@ export async function commentoCliente(share: string, a: { piano: string; a: Pt; 
   if (p.appunti.filter(x => x.da === "cliente").length >= 100) throw new Errore("Sono già arrivati tanti commenti: scrivi direttamente al progettista");
   const nome = String(a.nome ?? "").trim().slice(0, 60);
   return nuovoAppunto(p.id, { piano: a.piano, a: a.a, testo: (nome ? `${nome}: ` : "") + String(a.testo ?? "") }, "cliente");
+}
+
+/**
+ * Una volta per ambiente: i progetti del vecchio archivio (Upstash, o i file di .dati in locale) con storia, modelli e foto.
+ * Un progetto già nel database si aggiorna solo se il vecchio ha una revisione più alta (vuol dire che lì si è lavorato dopo);
+ * quello che è stato cambiato in D1 non si tocca mai. Si può ripetere senza danni se si interrompe.
+ */
+async function copiaDalVecchio() {
+  const v = await vecchioArchivio();
+  if (v) {
+    type Vecchio = Omit<Progetto, "modelli"> & { modelli?: Progetto["modelli"] };
+    for (const { id } of (await v.get<Voce[]>("abita:indice")) ?? []) {
+      const p = await v.get<Vecchio>(`abita:p:${id}`);
+      if (!p) continue;
+      const st = (await v.get<{ rev: number; testo: string; chi: Chi; quando: number }[]>(`abita:storia:${id}`)) ?? [];
+      await batch([
+        {
+          sql: `INSERT INTO progetti (id, testo, rev, aggiornato, gruppo, ${COLONNE.join(", ")}) VALUES (?, ?, ?, ?, ?, ${COLONNE.map(() => "?").join(", ")})
+            ON CONFLICT (id) DO UPDATE SET ${["testo", "rev", "aggiornato", "gruppo", ...COLONNE].map(c => `${c} = excluded.${c}`).join(", ")} WHERE excluded.rev > progetti.rev`,
+          params: [p.id, p.testo, p.rev, p.aggiornato, p.rev, ...valori({ ...p, modelli: p.modelli ?? {} })],
+        },
+        ...st.map(s => ({ sql: "INSERT OR IGNORE INTO versioni (progetto, gruppo, rev, testo, chi, quando) VALUES (?, ?, ?, ?, ?, ?)", params: [id, s.rev, s.rev, s.testo, s.chi, s.quando] })),
+      ]);
+      let pacco: Istruzione[] = [], peso = 0;                  // i dati pesanti a pacchi di qualche MB per richiesta
+      const manda = async () => { if (pacco.length) await batch(pacco); pacco = []; peso = 0; };
+      const metti = async (chiave: string, valore: string | null) => {
+        if (!valore) return;
+        pacco.push(...scriviDati(chiave, valore, false));
+        if ((peso += valore.length) > 3_000_000) await manda();
+      };
+      for (const m of Object.values(p.modelli ?? {})) { const mesh = await v.get<Record<string, string>>(`abita:m:${id}:${m.chiave}`); await metti(D.m(id, m.chiave), mesh && JSON.stringify(mesh)); }
+      for (const f of p.foto) await metti(D.f(f.id), (await v.get<{ dati: string }>(`abita:f:${f.id}`))?.dati ?? null);
+      await manda();
+    }
+  }
+  await sql("INSERT OR REPLACE INTO meta (chiave, valore) VALUES (?, ?)", [COPIATO, String(Date.now())]);
 }
