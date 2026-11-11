@@ -18,9 +18,17 @@ async function api(percorso: string, init?: RequestInit) {
   const j = (await r.json().catch(() => null)) as { success?: boolean; errors?: { code?: number; message: string }[]; result?: unknown } | null;
   if (!j?.success) {                                       // dove e cosa, senza credenziali: per capire se è il token, l'account o il database
     const dove = percorso.startsWith("?") ? "ricerca del database" : "query";
-    throw new Error(`Database (D1, ${dove}, HTTP ${r.status}): ${j?.errors?.map(e => `${e.message}${e.code ? ` [${e.code}]` : ""}`).join("; ") || "risposta vuota"}`);
+    throw new Error(`Database (D1, ${dove}, HTTP ${r.status}): ${j?.errors?.map(e => `${e.message}${e.code ? ` [${e.code}]` : ""}`).join("; ") || "risposta vuota"}`
+      + (r.status === 401 || r.status === 403 ? `. ${await diagnosi()}` : ""));
   }
   return j.result;
+}
+/** Quando D1 rifiuta: il token è valido? (come token personale o come token dell'account) Dice cosa sistemare. */
+async function diagnosi() {
+  const prova = async (u: string) => ((await fetch(u, { cache: "no-store", headers: { authorization: `Bearer ${token}` } }).then(x => x.json()).catch(() => null)) as { success?: boolean; result?: { status?: string } } | null);
+  const v = (await prova("https://api.cloudflare.com/client/v4/user/tokens/verify"))?.success ? "personale" : (await prova(`https://api.cloudflare.com/client/v4/accounts/${account}/tokens/verify`))?.success ? "dell'account" : null;
+  return v ? `Il token è valido (token ${v}) ma non può usare D1 su questo account: controlla che CLOUDFLARE_ACCOUNT_ID sia quello dell'account con "${nome}" e che il token abbia il permesso Account > D1 > Edit per quell'account (senza filtro sugli IP).`
+    : "Cloudflare non riconosce il token: forse è scaduto, revocato o copiato male (spazi, virgolette, un pezzo mancante). Creane uno nuovo con il permesso Account > D1 > Edit.";
 }
 let id: Promise<string> | null = null;
 const idDatabase = () => (id ??= process.env.CLOUDFLARE_D1_DATABASE_ID
