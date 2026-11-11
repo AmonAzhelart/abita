@@ -484,3 +484,5 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 6
 .tavola-pianta :not(text) { vector-effect: non-scaling-stroke; }
 .tavola-pianta.bn { filter: grayscale(1); }
 .ico-foglio { width: 15px; height: 15px; display: block; fill: none; stroke: currentColor; stroke-width: 1.6; }
+
+.avviso-copia { display: grid; gap: 6px; margin: 0 0 18px; padding: 14px 16px; border-radius: 14px; border: 1px solid #e8a33d; background: rgba(232, 163, 61, 0.12); }

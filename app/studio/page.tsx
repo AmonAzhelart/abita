@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import Elimina from "@/components/Elimina";
 import Importa from "@/components/Importa";
-import { crea, elenco, elimina } from "@/lib/progetti";
+import { copiaSospesa, crea, elenco, elimina } from "@/lib/progetti";
 
 export const metadata = { title: "Progetti · Abita" };
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ async function via(f: FormData) {
 const data = (t: number) => new Date(t).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default async function Studio() {
-  const lista = await elenco();
+  const lista = await elenco(), sospesa = copiaSospesa();
   return (
     <main className="pagina">
       <header className="testata">
@@ -33,6 +33,11 @@ export default async function Studio() {
         <Link href="/studio/guida" className="btn">Guida e collegamento a Claude</Link>
         <form method="post" action="/api/accesso"><button className="btn" name="esci" value="1">Esci</button></form>
       </header>
+      {sospesa && <div className="blocco avviso-copia" role="status">
+        <b>I progetti di prima sono ancora sul vecchio database (Upstash) e per ora non si possono leggere.</b>
+        <span>Abita riprova da solo ogni 5 minuti e li copia qui appena può, senza toccare quello che fai nel frattempo. Per averli subito: nella console di Upstash attiva l&apos;aumento automatico del piano o passa al pagamento a consumo (per la copia bastano pochi centesimi), poi ricarica questa pagina.</span>
+        <span className="tenue piccolo">Risposta di Upstash: {sospesa}</span>
+      </div>}
       <div className="griglia-progetti">
         <section className="progetto nuovo">
           <h2>Nuovo progetto</h2>

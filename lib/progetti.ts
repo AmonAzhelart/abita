@@ -42,13 +42,24 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS dati (chiave TEXT NOT NULL, parte INTEGER NOT NULL, valore TEXT NOT NULL, PRIMARY KEY (chiave, parte))`,
   `CREATE TABLE IF NOT EXISTS meta (chiave TEXT PRIMARY KEY, valore TEXT NOT NULL)`,
 ];
-let preparato: Promise<void> | null = null;
 const COPIATO = `copiato:${process.env.VERCEL_ENV ?? "locale"}`;   // l'anteprima e la produzione copiano ognuna per conto suo
-/** Una volta per avvio: le tabelle, e la copia dei progetti dal vecchio archivio se in questo ambiente non è ancora stata fatta. */
-const pronto = () => (preparato ??= (async () => {
-  const r = await batch([...SCHEMA.map(s => ({ sql: s })), { sql: "SELECT valore FROM meta WHERE chiave = ?", params: [COPIATO] }]);
-  if (!r[r.length - 1].length) await copiaDalVecchio();
-})().catch(e => { preparato = null; throw e; }));
+let preparato: Promise<void> | null = null, daCopiare = false, inCopia: Promise<void> | null = null, intoppo: { quando: number; msg: string } | null = null;
+/**
+ * Una volta per avvio: le tabelle, e la copia dei progetti dal vecchio archivio se in questo ambiente non è ancora stata fatta.
+ * Se il vecchio archivio non risponde (Upstash senza piano) Abita va avanti lo stesso e riprova al massimo ogni 5 minuti.
+ */
+async function pronto() {
+  await (preparato ??= batch([...SCHEMA.map(s => ({ sql: s })), { sql: "SELECT valore FROM meta WHERE chiave = ?", params: [COPIATO] }])
+    .then(r => { daCopiare = !r[r.length - 1].length; })
+    .catch(e => { preparato = null; throw e; }));
+  if (!daCopiare || (intoppo && Date.now() - intoppo.quando < 300_000)) return;
+  await (inCopia ??= copiaDalVecchio()
+    .then(() => { daCopiare = false; intoppo = null; })
+    .catch(e => { intoppo = { quando: Date.now(), msg: e instanceof Error ? e.message : String(e) }; console.error("Copia dal vecchio archivio:", intoppo.msg); })
+    .finally(() => { inCopia = null; }));
+}
+/** Se i progetti di prima non si sono ancora potuti copiare, perché: lo mostra l'elenco dei progetti. */
+export const copiaSospesa = () => (daCopiare && intoppo ? intoppo.msg : null);
 
 const json = <T>(v: unknown, vuoto: T): T => (typeof v === "string" && v ? (JSON.parse(v) as T) : vuoto);
 const progetto = (r: Riga): Progetto => ({
