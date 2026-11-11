@@ -28,7 +28,9 @@ async function diagnosi() {
   const prova = async (u: string) => ((await fetch(u, { cache: "no-store", headers: { authorization: `Bearer ${token}` } }).then(x => x.json()).catch(() => null)) as { success?: boolean; result?: { status?: string } } | null);
   const v = (await prova("https://api.cloudflare.com/client/v4/user/tokens/verify"))?.success ? "personale" : (await prova(`https://api.cloudflare.com/client/v4/accounts/${account}/tokens/verify`))?.success ? "dell'account" : null;
   // solo la forma dei valori, mai i caratteri: basta a riconoscere una Global API Key o un ID messi al posto del token
-  const forma = (s = "") => (/^[0-9a-f]{37}$/.test(s) ? "37 cifre esadecimali: sembra la Global API Key, non un API Token"
+  const forma = (s = "") => (s.startsWith("cfk_") || /^[0-9a-f]{37,45}$/.test(s) ? "è la Global API Key, non un API Token: con Abita non funziona"
+    : s.startsWith("cfut_") ? `token personale nel formato nuovo (cfut_), ${s.length} caratteri` : s.startsWith("cfat_") ? `token dell'account nel formato nuovo (cfat_), ${s.length} caratteri`
+      : s.startsWith("cfoat_") ? "è un accesso di Wrangler (cfoat_), non un API Token"
     : /^[0-9a-f]{32}$/.test(s) ? "32 cifre esadecimali: sembra un ID (account, zona o database), non un token"
       : /["'\s]/.test(s) ? `${s.length} caratteri, con virgolette o spazi dentro` : `${s.length} caratteri`);
   const conti = `CLOUDFLARE_API_TOKEN: ${forma(token)}; CLOUDFLARE_ACCOUNT_ID: ${/^[0-9a-f]{32}$/.test(account ?? "") ? "32 cifre esadecimali, giusto" : `${forma(account)}, ma dovrebbe essere di 32 cifre esadecimali`}.`;
